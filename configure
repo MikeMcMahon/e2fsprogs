@@ -916,7 +916,7 @@ htmldir='${docdir}'
 dvidir='${docdir}'
 pdfdir='${docdir}'
 psdir='${docdir}'
-libdir='${exec_prefix}/lib'
+libdir='${exec_prefix}/lib64'
 localedir='${datarootdir}/locale'
 mandir='${datarootdir}/man'
 
@@ -1450,7 +1450,7 @@ Fine tuning of the installation directories:
   --sysconfdir=DIR        read-only single-machine data [PREFIX/etc]
   --sharedstatedir=DIR    modifiable architecture-independent data [PREFIX/com]
   --localstatedir=DIR     modifiable single-machine data [PREFIX/var]
-  --libdir=DIR            object code libraries [EPREFIX/lib]
+  --libdir=DIR            object code libraries [EPREFIX/lib64]
   --includedir=DIR        C header files [PREFIX/include]
   --oldincludedir=DIR     C header files for non-gcc [/usr/include]
   --datarootdir=DIR       read-only arch.-independent data root [PREFIX/share]
@@ -7896,7 +7896,7 @@ if test "${with_libiconv_prefix+set}" = set; then :
 
       else
         additional_includedir="$withval/include"
-        additional_libdir="$withval/lib"
+        additional_libdir="$withval/lib64"
       fi
     fi
 
@@ -8109,9 +8109,9 @@ fi
                 case "$dep" in
                   -L*)
                     additional_libdir=`echo "X$dep" | sed -e 's/^X-L//'`
-                                                                                                                                                                if test "X$additional_libdir" != "X/usr/lib"; then
+                                                                                                                                                                if test "X$additional_libdir" != "X/usr/lib64"; then
                       haveit=
-                      if test "X$additional_libdir" = "X/usr/local/lib"; then
+                      if test "X$additional_libdir" = "X/usr/local/lib64"; then
                         if test -n "$GCC"; then
                           case $host_os in
                             linux*) haveit=yes;;
@@ -8931,7 +8931,7 @@ if test "${with_libintl_prefix+set}" = set; then :
 
       else
         additional_includedir="$withval/include"
-        additional_libdir="$withval/lib"
+        additional_libdir="$withval/lib64"
       fi
     fi
 
@@ -9144,9 +9144,9 @@ fi
                 case "$dep" in
                   -L*)
                     additional_libdir=`echo "X$dep" | sed -e 's/^X-L//'`
-                                                                                                                                                                if test "X$additional_libdir" != "X/usr/lib"; then
+                                                                                                                                                                if test "X$additional_libdir" != "X/usr/lib64"; then
                       haveit=
-                      if test "X$additional_libdir" = "X/usr/local/lib"; then
+                      if test "X$additional_libdir" = "X/usr/local/lib64"; then
                         if test -n "$GCC"; then
                           case $host_os in
                             linux*) haveit=yes;;
@@ -11325,7 +11325,7 @@ if test "$root_prefix" = NONE ; then
 else
 	root_bindir='${root_prefix}/bin'
 	root_sbindir='${root_prefix}/sbin'
-	root_libdir='${root_prefix}/lib'
+	root_libdir='${root_prefix}/lib64'
 	root_sysconfdir='${root_prefix}/etc'
 fi
 if test "$bindir" != '${exec_prefix}/bin'; then
@@ -11338,7 +11338,7 @@ if test "$sbindir" != '${exec_prefix}/sbin'; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: Setting root_sbindir to $root_sbindir" >&5
 $as_echo "Setting root_sbindir to $root_sbindir" >&6; }
 fi
-if test "$libdir" != '${exec_prefix}/lib'; then
+if test "$libdir" != '${exec_prefix}/lib64'; then
     root_libdir=$libdir
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: Setting root_libdir to $root_libdir" >&5
 $as_echo "Setting root_libdir to $root_libdir" >&6; }
