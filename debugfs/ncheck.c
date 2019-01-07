@@ -28,7 +28,7 @@ extern char *optarg;
 struct inode_walk_struct {
 	ext2_ino_t		dir;
 	ext2_ino_t		*iarray;
-	int			names_left;
+	int			inodes_left;
 	int			num_inodes;
 	int			position;
 	char			*parent;
@@ -45,7 +45,7 @@ static int ncheck_proc(struct ext2_dir_entry *dirent,
 	struct inode_walk_struct *iw = (struct inode_walk_struct *) private;
 	struct ext2_inode inode;
 	errcode_t	retval;
-	int		filetype = ext2fs_dirent_file_type(dirent);
+	int		filetype = dirent->name_len >> 8;
 	int		i;
 
 	iw->position++;
@@ -66,13 +66,11 @@ static int ncheck_proc(struct ext2_dir_entry *dirent,
 			if (iw->parent)
 				printf("%u\t%s/%.*s", iw->iarray[i],
 				       iw->parent,
-				       ext2fs_dirent_name_len(dirent),
-				       dirent->name);
+				       (dirent->name_len & 0xFF), dirent->name);
 			else
 				printf("%u\t<%u>/%.*s", iw->iarray[i],
 				       iw->dir,
-				       ext2fs_dirent_name_len(dirent),
-				       dirent->name);
+				       (dirent->name_len & 0xFF), dirent->name);
 			if (iw->check_dirent && filetype) {
 				if (!debugfs_read_inode(dirent->inode, &inode,
 							"ncheck") &&
@@ -81,17 +79,15 @@ static int ncheck_proc(struct ext2_dir_entry *dirent,
 				}
 			}
 			putc('\n', stdout);
-			iw->names_left--;
 		}
 	}
-	if (!iw->names_left)
+	if (!iw->inodes_left)
 		return DIRENT_ABORT;
 
 	return 0;
 }
 
-void do_ncheck(int argc, char **argv, int sci_idx EXT2FS_ATTR((unused)),
-	       void *infop EXT2FS_ATTR((unused)))
+void do_ncheck(int argc, char **argv)
 {
 	struct inode_walk_struct iw;
 	int			c, i;
@@ -113,8 +109,10 @@ void do_ncheck(int argc, char **argv, int sci_idx EXT2FS_ATTR((unused)),
 			goto print_usage;
 		}
 	}
+	argc -= optind;
+	argv += optind;
 
-	if (argc <= 1) {
+	if (argc < 1) {
 	print_usage:
 		com_err(argv[0], 0, "Usage: ncheck [-c] <inode number> ...");
 		return;
@@ -122,8 +120,6 @@ void do_ncheck(int argc, char **argv, int sci_idx EXT2FS_ATTR((unused)),
 	if (check_fs_open(argv[0]))
 		return;
 
-	argc -= optind;
-	argv += optind;
 	iw.iarray = malloc(sizeof(ext2_ino_t) * argc);
 	if (!iw.iarray) {
 		com_err("ncheck", ENOMEM,
@@ -132,22 +128,15 @@ void do_ncheck(int argc, char **argv, int sci_idx EXT2FS_ATTR((unused)),
 	}
 	memset(iw.iarray, 0, sizeof(ext2_ino_t) * argc);
 
-	iw.names_left = 0;
 	for (i=0; i < argc; i++) {
 		iw.iarray[i] = strtol(argv[i], &tmp, 0);
 		if (*tmp) {
-			com_err("ncheck", 0, "Bad inode - %s", argv[i]);
+			com_err(argv[0], 0, "Bad inode - %s", argv[i]);
 			goto error_out;
 		}
-		if (debugfs_read_inode(iw.iarray[i], &inode, *argv))
-			goto error_out;
-		if (LINUX_S_ISDIR(inode.i_mode))
-			iw.names_left += 1;
-		else
-			iw.names_left += inode.i_links_count;
 	}
 
-	iw.num_inodes = argc;
+	iw.num_inodes = iw.inodes_left = argc;
 
 	retval = ext2fs_open_inode_scan(current_fs, 0, &scan);
 	if (retval) {
@@ -191,7 +180,7 @@ void do_ncheck(int argc, char **argv, int sci_idx EXT2FS_ATTR((unused)),
 			goto next;
 		}
 
-		if (iw.names_left == 0)
+		if (iw.inodes_left == 0)
 			break;
 
 	next:

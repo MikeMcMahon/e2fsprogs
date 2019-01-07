@@ -38,7 +38,7 @@ extern int optind;
 #include "ext2fs/ext2fs.h"
 #include "blkid/blkid.h"
 
-static const char *progname = "blkid";
+const char *progname = "blkid";
 
 static void print_version(FILE *out)
 {
@@ -87,9 +87,7 @@ static void safe_print(const char *cp, int len)
 			fputc('^', stdout);
 			ch ^= 0x40; /* ^@, ^A, ^B; ^? for DEL */
 		}
-		if (ch != '"') {
-			fputc(ch, stdout);
-		}
+		fputc(ch, stdout);
 	}
 }
 
@@ -102,27 +100,19 @@ static int get_terminal_width(void)
 	struct winsize	w_win;
 #endif
         const char	*cp;
-	int width = 80;
 
 #ifdef TIOCGSIZE
-	if (ioctl (0, TIOCGSIZE, &t_win) == 0) {
-		width = t_win.ts_cols;
-		goto got_it;
-	}
+	if (ioctl (0, TIOCGSIZE, &t_win) == 0)
+		return (t_win.ts_cols);
 #endif
 #ifdef TIOCGWINSZ
-	if (ioctl (0, TIOCGWINSZ, &w_win) == 0) {
-		width = w_win.ws_col;
-		goto got_it;
-	}
+	if (ioctl (0, TIOCGWINSZ, &w_win) == 0)
+		return (w_win.ws_col);
 #endif
         cp = getenv("COLUMNS");
 	if (cp)
-		width = atoi(cp);
-got_it:
-	if (width > 4096)
-		return 4096;	/* sanity check */
-	return width;
+		return strtol(cp, NULL, 10);
+	return 80;
 }
 
 static int pretty_print_word(const char *str, int max_len,
@@ -137,9 +127,9 @@ static int pretty_print_word(const char *str, int max_len,
 		len = 0;
 	} else if (len > max_len)
 		ret = len - max_len;
-	do {
+	do
 		fputc(' ', stdout);
-	} while (len++ < max_len);
+	while (len++ < max_len);
 	return ret;
 }
 
@@ -152,21 +142,20 @@ static void pretty_print_line(const char *device, const char *fs_type,
 	static int term_width = -1;
 	int len, w;
 
-	if (term_width < 0) {
+	if (term_width < 0)
 		term_width = get_terminal_width();
 
-		if (term_width > 80) {
-			term_width -= 80;
-			w = term_width / 10;
-			if (w > 8)
-				w = 8;
-			term_width -= 2*w;
-			label_len += w;
-			fs_type_len += w;
-			w = term_width/2;
-			device_len += w;
-			mtpt_len +=w;
-		}
+	if (term_width > 80) {
+		term_width -= 80;
+		w = term_width / 10;
+		if (w > 8)
+			w = 8;
+		term_width -= 2*w;
+		label_len += w;
+		fs_type_len += w;
+		w = term_width/2;
+		device_len += w;
+		mtpt_len +=w;
 	}
 
 	len = pretty_print_word(device, device_len, 0, 1);
@@ -295,7 +284,10 @@ int main(int argc, char **argv)
 	while ((c = getopt (argc, argv, "c:f:ghlLo:s:t:w:v")) != EOF)
 		switch (c) {
 		case 'c':
-			read = optarg;
+			if (optarg && !*optarg)
+				read = NULL;
+			else
+				read = optarg;
 			if (!write)
 				write = read;
 			break;
@@ -348,11 +340,13 @@ int main(int argc, char **argv)
 			version = 1;
 			break;
 		case 'w':
-			write = optarg;
+			if (optarg && !*optarg)
+				write = NULL;
+			else
+				write = optarg;
 			break;
 		case 'h':
 			err = 0;
-			/* fallthrough */
 		default:
 			usage(err);
 		}

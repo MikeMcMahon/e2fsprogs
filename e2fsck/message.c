@@ -32,7 +32,7 @@
  * 	%IM	<inode> -> i_mtime
  * 	%IF	<inode> -> i_faddr
  * 	%If	<inode> -> i_file_acl
- * 	%Id	<inode> -> i_size_high
+ * 	%Id	<inode> -> i_dir_acl
  * 	%Iu	<inode> -> i_uid
  * 	%Ig	<inode> -> i_gid
  *	%It	<inode type>
@@ -48,9 +48,6 @@
  * 			the containing directory.
  * 	%r	<blkcount>		interpret blkcount as refcount
  * 	%s	<str>			miscellaneous string
- *	%t	time (in <num>)
- *	%T	current time
- *	%U	quota type (in <num>)
  * 	%S	backup superblock
  * 	%X	<num> hexadecimal format
  *
@@ -95,9 +92,9 @@
 #include <string.h>
 #include <ctype.h>
 #include <termios.h>
-#include "support/quotaio.h"
 
 #include "e2fsck.h"
+
 #include "problem.h"
 
 #ifdef __GNUC__
@@ -119,17 +116,17 @@ static const char *abbrevs[] = {
 	N_("Bbitmap"),
 	N_("ccompress"),
 	N_("Cconflicts with some other fs @b"),
-	N_("ddirectory"),
+	N_("iinode"),
+	N_("Iillegal"),
+	N_("jjournal"),
 	N_("Ddeleted"),
+	N_("ddirectory"),
 	N_("eentry"),
 	N_("E@e '%Dn' in %p (%i)"),
 	N_("ffilesystem"),
 	N_("Ffor @i %i (%Q) is"),
 	N_("ggroup"),
 	N_("hHTREE @d @i"),
-	N_("iinode"),
-	N_("Iillegal"),
-	N_("jjournal"),
 	N_("llost+found"),
 	N_("Lis a link"),
 	N_("mmultiply-claimed"),
@@ -224,13 +221,12 @@ static void print_time(FILE *f, time_t t)
 	static int		do_gmt = -1;
 
 #ifdef __dietlibc__
-		/* The diet libc doesn't respect the TZ environment variable */
+		/* The diet libc doesn't respect the TZ environemnt variable */
 		if (do_gmt == -1) {
 			time_str = getenv("TZ");
 			if (!time_str)
 				time_str = "";
-			do_gmt = !strcmp(time_str, "GMT") ||
-				!strcmp(time_str, "GMT0");
+			do_gmt = !strcmp(time_str, "GMT0");
 		}
 #endif
 		time_str = asctime((do_gmt > 0) ? gmtime(&t) : localtime(&t));
@@ -283,14 +279,24 @@ static _INLINE_ void expand_inode_expression(FILE *f, ext2_filsys fs, char ch,
 	case 's':
 		if (LINUX_S_ISDIR(inode->i_mode))
 			fprintf(f, "%u", inode->i_size);
-		else
+		else {
+#ifdef EXT2_NO_64_TYPE
+			if (inode->i_size_high)
+				fprintf(f, "0x%x%08x", inode->i_size_high,
+					inode->i_size);
+			else
+				fprintf(f, "%u", inode->i_size);
+#else
 			fprintf(f, "%llu", EXT2_I_SIZE(inode));
+#endif
+		}
 		break;
 	case 'S':
 		fprintf(f, "%u", large_inode->i_extra_isize);
 		break;
 	case 'b':
-		if (ext2fs_has_feature_huge_file(fs->super))
+		if (fs->super->s_feature_ro_compat &
+		    EXT4_FEATURE_RO_COMPAT_HUGE_FILE) 
 			fprintf(f, "%llu", inode->i_blocks +
 				(((long long) inode->osd2.linux2.l_i_blocks_hi)
 				 << 32));
@@ -314,7 +320,7 @@ static _INLINE_ void expand_inode_expression(FILE *f, ext2_filsys fs, char ch,
 		break;
 	case 'd':
 		fprintf(f, "%u", (LINUX_S_ISDIR(inode->i_mode) ?
-			inode->i_size_high : 0));
+				  inode->i_dir_acl : 0));
 		break;
 	case 'u':
 		fprintf(f, "%d", inode_uid(*inode));
@@ -367,7 +373,7 @@ static _INLINE_ void expand_dirent_expression(FILE *f, ext2_filsys fs, char ch,
 		fprintf(f, "%u", dirent->inode);
 		break;
 	case 'n':
-		len = ext2fs_dirent_name_len(dirent);
+		len = dirent->name_len & 0xFF;
 		if ((ext2fs_get_rec_len(fs, dirent, &rec_len) == 0) &&
 		    (len > rec_len))
 			len = rec_len;
@@ -378,10 +384,10 @@ static _INLINE_ void expand_dirent_expression(FILE *f, ext2_filsys fs, char ch,
 		fprintf(f, "%u", rec_len);
 		break;
 	case 'l':
-		fprintf(f, "%u", ext2fs_dirent_name_len(dirent));
+		fprintf(f, "%u", dirent->name_len & 0xFF);
 		break;
 	case 't':
-		fprintf(f, "%u", ext2fs_dirent_file_type(dirent));
+		fprintf(f, "%u", dirent->name_len >> 8);
 		break;
 	default:
 	no_dirent:
@@ -405,7 +411,11 @@ static _INLINE_ void expand_percent_expression(FILE *f, ext2_filsys fs,
 		fputc('%', f);
 		break;
 	case 'b':
+#ifdef EXT2_NO_64_TYPE
+		fprintf(f, "%*u", width, (unsigned long) ctx->blk);
+#else
 		fprintf(f, "%*llu", width, (unsigned long long) ctx->blk);
+#endif
 		break;
 	case 'B':
 		if (ctx->blkcount == BLOCK_COUNT_IND)
@@ -421,11 +431,20 @@ static _INLINE_ void expand_percent_expression(FILE *f, ext2_filsys fs,
 		if (*first && islower(m[0]))
 			fputc(toupper(*m++), f);
 		fputs(m, f);
-		if (ctx->blkcount >= 0)
+		if (ctx->blkcount >= 0) {
+#ifdef EXT2_NO_64_TYPE
+			fprintf(f, "%d", ctx->blkcount);
+#else
 			fprintf(f, "%lld", (long long) ctx->blkcount);
+#endif
+		}
 		break;
 	case 'c':
+#ifdef EXT2_NO_64_TYPE
+		fprintf(f, "%*u", width, (unsigned long) ctx->blk2);
+#else
 		fprintf(f, "%*llu", width, (unsigned long long) ctx->blk2);
+#endif
 		break;
 	case 'd':
 		fprintf(f, "%*u", width, ctx->dir);
@@ -443,10 +462,11 @@ static _INLINE_ void expand_percent_expression(FILE *f, ext2_filsys fs,
 		fprintf(f, "%*s", width, error_message(ctx->errcode));
 		break;
 	case 'N':
+#ifdef EXT2_NO_64_TYPE
+		fprintf(f, "%*u", width, ctx->num);
+#else
 		fprintf(f, "%*llu", width, (long long)ctx->num);
-		break;
-	case 'n':
-		fprintf(f, "%*llu", width, (long long)ctx->num2);
+#endif
 		break;
 	case 'p':
 		print_pathname(f, fs, ctx->ino, 0);
@@ -462,7 +482,11 @@ static _INLINE_ void expand_percent_expression(FILE *f, ext2_filsys fs,
 		print_pathname(f, fs, ctx->dir, ctx->ino);
 		break;
 	case 'r':
+#ifdef EXT2_NO_64_TYPE
+		fprintf(f, "%*d", width, ctx->blkcount);
+#else
 		fprintf(f, "%*lld", width, (long long) ctx->blkcount);
+#endif
 		break;
 	case 'S':
 		fprintf(f, "%llu", get_backup_sb(NULL, fs, NULL, NULL));
@@ -476,32 +500,15 @@ static _INLINE_ void expand_percent_expression(FILE *f, ext2_filsys fs,
 	case 'T':
 		print_time(f, e2fsck_ctx ? e2fsck_ctx->now : time(0));
 		break;
-	case 'U':
-		switch (ctx->num) {
-		case USRQUOTA:
-			m = _("user");
-			break;
-		case GRPQUOTA:
-			m = _("group");
-			break;
-		case PRJQUOTA:
-			m = _("project");
-			break;
-		default:
-			m = _("unknown quota type");
-			break;
-		}
-		if (*first && islower(m[0]))
-			fputc(toupper(*m++), f);
-		fputs(m, f);
-		if (ctx->num > PRJQUOTA)
-			fprintf(f, " %d", (int) ctx->num);
-		break;
 	case 'x':
 		fprintf(f, "0x%0*x", width, ctx->csum1);
 		break;
 	case 'X':
+#ifdef EXT2_NO_64_TYPE
+		fprintf(f, "0x%0*x", width, ctx->num);
+#else
 		fprintf(f, "0x%0*llx", width, (long long)ctx->num);
+#endif
 		break;
 	case 'y':
 		fprintf(f, "0x%0*x", width, ctx->csum2);

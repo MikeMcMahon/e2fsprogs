@@ -91,6 +91,9 @@ static void fix_perms(const char *cmd, const struct ext2_inode *inode,
 	if (i == -1)
 		com_err(cmd, errno, "while changing ownership of %s", name);
 
+	if (fd != -1)
+		close(fd);
+
 	ut.actime = inode->i_atime;
 	ut.modtime = inode->i_mtime;
 	if (utime(name, &ut) == -1)
@@ -144,8 +147,7 @@ static void dump_file(const char *cmdname, ext2_ino_t ino, int fd,
 	return;
 }
 
-void do_dump(int argc, char **argv, int sci_idx EXT2FS_ATTR((unused)),
-	     void *infop EXT2FS_ATTR((unused)))
+void do_dump(int argc, char **argv)
 {
 	ext2_ino_t	inode;
 	int		fd;
@@ -209,7 +211,9 @@ static void rdump_symlink(ext2_ino_t ino, struct ext2_inode *inode,
 		goto errout;
 	}
 
-	if (ext2fs_is_fast_symlink(inode))
+	/* Apparently, this is the right way to detect and handle fast
+	 * symlinks; see do_stat() in debugfs.c. */
+	if (inode->i_blocks == 0)
 		strcpy(buf, (char *) inode->i_block);
 	else {
 		unsigned bytes = inode->i_size;
@@ -268,12 +272,12 @@ static void rdump_inode(ext2_ino_t ino, struct ext2_inode *inode,
 		int fd;
 		fd = open(fullname, O_WRONLY | O_CREAT | O_TRUNC | O_LARGEFILE, S_IRWXU);
 		if (fd == -1) {
-			com_err("rdump", errno, "while opening %s", fullname);
+			com_err("rdump", errno, "while dumping %s", fullname);
 			goto errout;
 		}
 		dump_file("rdump", ino, fd, 1, fullname);
 		if (close(fd) != 0) {
-			com_err("rdump", errno, "while closing %s", fullname);
+			com_err("rdump", errno, "while dumping %s", fullname);
 			goto errout;
 		}
 	}
@@ -283,7 +287,7 @@ static void rdump_inode(ext2_ino_t ino, struct ext2_inode *inode,
 		/* Create the directory with 0700 permissions, because we
 		 * expect to have to create entries it.  Then fix its perms
 		 * once we've done the traversal. */
-		if (name[0] && mkdir(fullname, S_IRWXU) == -1) {
+		if (mkdir(fullname, S_IRWXU) == -1) {
 			com_err("rdump", errno, "while making directory %s", fullname);
 			goto errout;
 		}
@@ -311,7 +315,7 @@ static int rdump_dirent(struct ext2_dir_entry *dirent,
 	const char *dumproot = private;
 	struct ext2_inode inode;
 
-	thislen = ext2fs_dirent_name_len(dirent);
+	thislen = dirent->name_len & 0xFF;
 	strncpy(name, dirent->name, thislen);
 	name[thislen] = 0;
 
@@ -323,53 +327,46 @@ static int rdump_dirent(struct ext2_dir_entry *dirent,
 	return 0;
 }
 
-void do_rdump(int argc, char **argv, int sci_idx EXT2FS_ATTR((unused)),
-	      void *infop EXT2FS_ATTR((unused)))
+void do_rdump(int argc, char **argv)
 {
+	ext2_ino_t ino;
+	struct ext2_inode inode;
 	struct stat st;
-	char *dest_dir;
 	int i;
+	char *p;
 
-	if (common_args_process(argc, argv, 3, INT_MAX, "rdump",
-				"<directory>... <native directory>", 0))
+	if (common_args_process(argc, argv, 3, 3, "rdump",
+				"<directory> <native directory>", 0))
 		return;
 
-	/* Pull out last argument */
-	dest_dir = argv[argc - 1];
-	argc--;
+	ino = string_to_inode(argv[1]);
+	if (!ino)
+		return;
 
-	/* Ensure last arg is a directory. */
-	if (stat(dest_dir, &st) == -1) {
-		com_err("rdump", errno, "while statting %s", dest_dir);
+	/* Ensure ARGV[2] is a directory. */
+	i = stat(argv[2], &st);
+	if (i == -1) {
+		com_err("rdump", errno, "while statting %s", argv[2]);
 		return;
 	}
 	if (!S_ISDIR(st.st_mode)) {
-		com_err("rdump", 0, "%s is not a directory", dest_dir);
+		com_err("rdump", 0, "%s is not a directory", argv[2]);
 		return;
 	}
 
-	for (i = 1; i < argc; i++) {
-		char *arg = argv[i], *basename;
-		struct ext2_inode inode;
-		ext2_ino_t ino = string_to_inode(arg);
-		if (!ino)
-			continue;
+	if (debugfs_read_inode(ino, &inode, argv[1]))
+		return;
 
-		if (debugfs_read_inode(ino, &inode, arg))
-			continue;
+	p = strrchr(argv[1], '/');
+	if (p)
+		p++;
+	else
+		p = argv[1];
 
-		basename = strrchr(arg, '/');
-		if (basename)
-			basename++;
-		else
-			basename = arg;
-
-		rdump_inode(ino, &inode, basename, dest_dir);
-	}
+	rdump_inode(ino, &inode, p, argv[2]);
 }
 
-void do_cat(int argc, char **argv, int sci_idx EXT2FS_ATTR((unused)),
-	    void *infop EXT2FS_ATTR((unused)))
+void do_cat(int argc, char **argv)
 {
 	ext2_ino_t	inode;
 

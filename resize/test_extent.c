@@ -4,7 +4,7 @@
  * Copyright (C) 1997, 1998 by Theodore Ts'o and
  * 	PowerQuest, Inc.
  *
- * Copyright (C) 1999, 2000 by Theodore Ts'o
+ * Copyright (C) 1999, 2000 by Theosore Ts'o
  *
  * %Begin-Header%
  * This file may be redistributed under the terms of the GNU Public
@@ -109,8 +109,6 @@ void do_test(FILE *in, FILE *out)
 		} else
 			fputs("# Syntax error\n", out);
 	}
-	if (extent)
-		ext2fs_free_extent_table(extent);
 }
 
 #ifdef __GNUC__

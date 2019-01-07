@@ -9,14 +9,6 @@
  * %End-Header%
  */
 
-/* define BSD_SOURCE to make sure we get the major() macro */
-#ifndef _BSD_SOURCE
-#define _BSD_SOURCE
-#endif
-#ifndef _DEFAULT_SOURCE
-#define _DEFAULT_SOURCE	/* since glibc 2.20 _SVID_SOURCE is deprecated */
-#endif
-
 #include "config.h"
 #include <stdio.h>
 #if HAVE_UNISTD_H
@@ -46,18 +38,10 @@
 #endif /* HAVE_GETMNTINFO */
 #include <string.h>
 #include <sys/stat.h>
-#if HAVE_SYS_TYPES_H
-#include <sys/types.h>
-#endif
-#ifdef HAVE_SYS_SYSMACROS_H
-#include <sys/sysmacros.h>
-#endif
 
 #include "ext2_fs.h"
 #include "ext2fs.h"
-#include "ext2fsP.h"
 
-#ifdef HAVE_SETMNTENT
 /*
  * Check to see if a regular file is mounted.
  * If /etc/mtab/ is a symlink of /proc/mounts, you will need the following check
@@ -67,7 +51,7 @@ static int check_loop_mounted(const char *mnt_fsname, dev_t mnt_rdev,
 				dev_t file_dev, ino_t file_ino)
 {
 #if defined(HAVE_LINUX_LOOP_H) && defined(HAVE_LINUX_MAJOR_H)
-	struct loop_info64 loopinfo = {0, };
+	struct loop_info64 loopinfo;
 	int loop_fd, ret;
 
 	if (major(mnt_rdev) == LOOP_MAJOR) {
@@ -88,6 +72,7 @@ static int check_loop_mounted(const char *mnt_fsname, dev_t mnt_rdev,
 	return 0;
 }
 
+#ifdef HAVE_SETMNTENT
 /*
  * Helper function which checks a file in /etc/mtab format to see if a
  * filesystem is mounted.  Returns an error if the file doesn't exist
@@ -105,7 +90,6 @@ static errcode_t check_mntent_file(const char *mtab_file, const char *file,
 	int		fd;
 
 	*mount_flags = 0;
-
 	if ((f = setmntent (mtab_file, "r")) == NULL) {
 		if (errno == ENOENT) {
 			if (getenv("EXT2FS_NO_MTAB_OK"))
@@ -116,7 +100,7 @@ static errcode_t check_mntent_file(const char *mtab_file, const char *file,
 		return errno;
 	}
 	if (stat(file, &st_buf) == 0) {
-		if (ext2fsP_is_disk_device(st_buf.st_mode)) {
+		if (S_ISBLK(st_buf.st_mode)) {
 #ifndef __GNU__ /* The GNU hurd is broken with respect to stat devices */
 			file_rdev = st_buf.st_rdev;
 #endif	/* __GNU__ */
@@ -131,7 +115,7 @@ static errcode_t check_mntent_file(const char *mtab_file, const char *file,
 		if (strcmp(file, mnt->mnt_fsname) == 0)
 			break;
 		if (stat(mnt->mnt_fsname, &st_buf) == 0) {
-			if (ext2fsP_is_disk_device(st_buf.st_mode)) {
+			if (S_ISBLK(st_buf.st_mode)) {
 #ifndef __GNU__
 				if (file_rdev && (file_rdev == st_buf.st_rdev))
 					break;
@@ -311,7 +295,7 @@ static int is_swap_device(const char *file)
 	file_dev = 0;
 #ifndef __GNU__ /* The GNU hurd is broken with respect to stat devices */
 	if ((stat(file, &st_buf) == 0) &&
-	    ext2fsP_is_disk_device(st_buf.st_mode))
+	    S_ISBLK(st_buf.st_mode))
 		file_dev = st_buf.st_rdev;
 #endif	/* __GNU__ */
 
@@ -338,7 +322,7 @@ valid_first_line:
 		}
 #ifndef __GNU__
 		if (file_dev && (stat(buf, &st_buf) == 0) &&
-		    ext2fsP_is_disk_device(st_buf.st_mode) &&
+		    S_ISBLK(st_buf.st_mode) &&
 		    file_dev == st_buf.st_rdev) {
 			ret++;
 			break;
@@ -368,19 +352,6 @@ errcode_t ext2fs_check_mount_point(const char *device, int *mount_flags,
 {
 	errcode_t	retval = 0;
 
-	if (getenv("EXT2FS_PRETEND_RO_MOUNT")) {
-		*mount_flags = EXT2_MF_MOUNTED | EXT2_MF_READONLY;
-		if (getenv("EXT2FS_PRETEND_ROOTFS"))
-			*mount_flags = EXT2_MF_ISROOT;
-		return 0;
-	}
-	if (getenv("EXT2FS_PRETEND_RW_MOUNT")) {
-		*mount_flags = EXT2_MF_MOUNTED;
-		if (getenv("EXT2FS_PRETEND_ROOTFS"))
-			*mount_flags = EXT2_MF_ISROOT;
-		return 0;
-	}
-
 	if (is_swap_device(device)) {
 		*mount_flags = EXT2_MF_MOUNTED | EXT2_MF_SWAP;
 		strncpy(mtpt, "<swap>", mtlen);
@@ -405,8 +376,7 @@ errcode_t ext2fs_check_mount_point(const char *device, int *mount_flags,
 	{
 		struct stat st_buf;
 
-		if (stat(device, &st_buf) == 0 &&
-		    ext2fsP_is_disk_device(st_buf.st_mode)) {
+		if (stat(device, &st_buf) == 0 && S_ISBLK(st_buf.st_mode)) {
 			int fd = open(device, O_RDONLY | O_EXCL);
 
 			if (fd >= 0)

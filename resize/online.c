@@ -61,7 +61,7 @@ errcode_t online_resize_fs(ext2_filsys fs, const char *mtpt,
 	double			percent;
 	dgrp_t			i;
 	blk_t			size;
-	int			fd;
+	int			fd, overhead;
 	int			use_old_ioctl = 1;
 	int			no_meta_bg_resize = 0;
 	int			no_resize_ioctl = 0;
@@ -74,13 +74,6 @@ errcode_t online_resize_fs(ext2_filsys fs, const char *mtpt,
 			no_meta_bg_resize = 1;
 		if (kvers < VERSION_CODE(3, 3, 0))
 			no_resize_ioctl = 1;
-	}
-
-	if (ext2fs_has_feature_sparse_super2(fs->super) &&
-	    (access("/sys/fs/ext4/features/sparse_super2", R_OK) != 0)) {
-		com_err(program_name, 0, _("kernel does not support online "
-					   "resize with sparse_super2"));
-		exit(1);
 	}
 
 	printf(_("Filesystem at %s is mounted on %s; "
@@ -108,14 +101,16 @@ errcode_t online_resize_fs(ext2_filsys fs, const char *mtpt,
 	 */
 	if ((access("/sys/fs/ext4/features/meta_bg_resize", R_OK) != 0) ||
 	    no_meta_bg_resize) {
-		if (!ext2fs_has_feature_resize_inode(fs->super) &&
+		if (!EXT2_HAS_COMPAT_FEATURE(fs->super,
+					EXT2_FEATURE_COMPAT_RESIZE_INODE) &&
 		    (new_desc_blocks != fs->desc_blocks)) {
 			com_err(program_name, 0,
 				_("Filesystem does not support online resizing"));
 			exit(1);
 		}
 
-		if (ext2fs_has_feature_resize_inode(fs->super) &&
+		if (EXT2_HAS_COMPAT_FEATURE(fs->super,
+					EXT2_FEATURE_COMPAT_RESIZE_INODE) &&
 		    new_desc_blocks > (fs->desc_blocks +
 				       fs->super->s_reserved_gdt_blocks)) {
 			com_err(program_name, 0,
@@ -201,7 +196,7 @@ errcode_t online_resize_fs(ext2_filsys fs, const char *mtpt,
 	}
 
 	/* The current method of adding one block group at a time to a
-	 * mounted filesystem means it is impossible to accommodate the
+	 * mounted filesystem means it is impossible to accomodate the
 	 * flex_bg allocation method of placing the metadata together
 	 * in a single block group.  For now we "fix" this issue by
 	 * using the traditional layout for new block groups, where
@@ -210,7 +205,7 @@ errcode_t online_resize_fs(ext2_filsys fs, const char *mtpt,
 	 * the layout advantages of flex_bg in the new block groups,
 	 * but at least it allows on-line resizing to function.
 	 */
-	ext2fs_clear_feature_flex_bg(new_fs->super);
+	new_fs->super->s_feature_incompat &= ~EXT4_FEATURE_INCOMPAT_FLEX_BG;
 	retval = adjust_fs_info(new_fs, fs, 0, *new_size);
 	if (retval) {
 		close(fd);
@@ -233,6 +228,13 @@ errcode_t online_resize_fs(ext2_filsys fs, const char *mtpt,
 
 	for (i = fs->group_desc_count;
 	     i < new_fs->group_desc_count; i++) {
+
+		overhead = (int) (2 + new_fs->inode_blocks_per_group);
+
+		if (ext2fs_bg_has_super(new_fs, new_fs->group_desc_count - 1))
+			overhead += 1 + new_fs->desc_blocks +
+				new_fs->super->s_reserved_gdt_blocks;
+
 		input.group = i;
 		input.block_bitmap = ext2fs_block_bitmap_loc(new_fs, i);
 		input.inode_bitmap = ext2fs_inode_bitmap_loc(new_fs, i);

@@ -33,7 +33,7 @@ extern int optind;
 #ifdef HAVE_ERRNO_H
 #include <errno.h>
 #endif
-#include "support/nls-enable.h"
+#include "nls-enable.h"
 
 #define EXT2_SUPER_MAGIC 0xEF53
 

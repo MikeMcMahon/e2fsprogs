@@ -45,16 +45,19 @@
 errcode_t ext2fs_get_memalign(unsigned long size,
 			      unsigned long align, void *ptr)
 {
-	errcode_t retval = 0;
+	errcode_t retval;
 	void **p = ptr;
 
 	if (align < 8)
 		align = 8;
 #ifdef HAVE_POSIX_MEMALIGN
 	retval = posix_memalign(p, align, size);
-	if (retval == ENOMEM)
-		return EXT2_ET_NO_MEMORY;
-#else  /* !HAVE_POSIX_MEMALIGN */
+	if (retval) {
+		if (retval == ENOMEM)
+			return EXT2_ET_NO_MEMORY;
+		return retval;
+	}
+#else
 #ifdef HAVE_MEMALIGN
 	*p = memalign(align, size);
 	if (*p == NULL) {
@@ -63,22 +66,22 @@ errcode_t ext2fs_get_memalign(unsigned long size,
 		else
 			return EXT2_ET_NO_MEMORY;
 	}
-#else  /* !HAVE_MEMALIGN */
+#else
 #ifdef HAVE_VALLOC
 	if (align > sizeof(long long))
 		*p = valloc(size);
 	else
 #endif
 		*p = malloc(size);
-	if ((uintptr_t) *p & (align - 1)) {
+	if ((unsigned long) *p & (align - 1)) {
 		free(*p);
 		*p = 0;
 	}
 	if (*p == 0)
 		return EXT2_ET_NO_MEMORY;
-#endif	/* HAVE_MEMALIGN */
-#endif	/* HAVE_POSIX_MEMALIGN */
-	return retval;
+#endif
+#endif
+	return 0;
 }
 
 #ifdef DEBUG

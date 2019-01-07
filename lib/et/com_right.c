@@ -1,6 +1,6 @@
 /*
  * com_right.c -- provide Heimdall / Kerberos4kth com_err interfaces
- * 	for backwards compatibility
+ * 	for backwards compatbility
  *
  * Copyright (c) 2003 by Theodore Ts'o
  *

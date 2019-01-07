@@ -1,7 +1,4 @@
-if ! test -x $RESIZE2FS_EXE -o ! -x $DEBUGFS_EXE; then
-	echo "$test_name: $test_description: skipped (no debugfs/resize2fs)"
-	return 0
-fi
+if test -x $RESIZE2FS_EXE -a -x $DEBUGFS_EXE; then
 
 IMAGE=$test_dir/image.gz
 FSCK_OPT=-yf
@@ -10,27 +7,27 @@ EXP=$test_dir/expect
 
 gunzip < $IMAGE > $TMPFILE
 
-echo "resize2fs test" > $OUT.new
+echo "resize2fs test" > $OUT
 
 # Look at existing inline extended attribute
-echo "debugfs -R ''stat file'' test.img 2>&1 | grep ''^Inode\|in inode body\|user.name (''" >> $OUT.new
-$DEBUGFS -R "stat file" $TMPFILE 2>&1 | grep "^Inode\|in inode body\|user.name (" >> $OUT.new
+echo "debugfs -R ''stat file'' test.img 2>&1 | grep ''^Inode\|in inode body\|name = ''" >> $OUT
+$DEBUGFS -R "stat file" $TMPFILE 2>&1 | grep "^Inode\|in inode body\|name = " >> $OUT
 status=$?
-echo Exit status is $status >> $OUT.new
+echo Exit status is $status >> $OUT
 
 # resize it
-echo "resize2fs test.img 5M" >> $OUT.new
-$RESIZE2FS $TMPFILE 5M >> $OUT.new 2>&1
+echo "resize2fs test.img 5M" >> $OUT
+$RESIZE2FS $TMPFILE 5M 2>&1 >> $OUT.new 2>&1
 status=$?
 echo Exit status is $status >> $OUT.new
+sed -f $cmd_dir/filter.sed -e "s;$TMPFILE;test.img;" $OUT.new >> $OUT
 
 # Look at inline extended attribute in resized fs
-echo "debugfs -R ''stat file'' test.img 2>&1 | grep ''^Inode\|in inode body\|user.name (''" >> $OUT.new
-$DEBUGFS -R "stat file" $TMPFILE 2>&1 | grep "^Inode\|in inode body\|user.name (" >> $OUT.new
+echo "debugfs -R ''stat file'' test.img 2>&1 | grep ''^Inode\|in inode body\|name = ''" >> $OUT
+$DEBUGFS -R "stat file" $TMPFILE 2>&1 | grep "^Inode\|in inode body\|name = " >> $OUT
 status=$?
-echo Exit status is $status >> $OUT.new
+echo Exit status is $status >> $OUT
 
-sed -f $cmd_dir/filter.sed < $OUT.new > $OUT
 rm $TMPFILE $OUT.new
 
 #
@@ -49,3 +46,8 @@ else
 fi
 
 unset IMAGE FSCK_OPT OUT EXP
+
+else #if test -x $RESIZE2FS_EXE -a -x $DEBUGFS_EXE; then
+	echo "$test_name: $test_description: skipped"
+fi
+

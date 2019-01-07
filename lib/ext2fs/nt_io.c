@@ -230,15 +230,17 @@ static errcode_t nt_write_blk(io_channel channel, unsigned long block,
 static errcode_t nt_flush(io_channel channel);
 
 static struct struct_io_manager struct_nt_manager = {
-	.magic		= EXT2_ET_MAGIC_IO_MANAGER,
-	.name		= "NT I/O Manager",
-	.open		= nt_open,
-	.close		= nt_close,
-	.set_blksize	= nt_set_blksize,
-	.read_blk	= nt_read_blk,
-	.write_blk	= nt_write_blk,
-	.flush		= nt_flush
+	EXT2_ET_MAGIC_IO_MANAGER,
+	"NT I/O Manager",
+	nt_open,
+	nt_close,
+	nt_set_blksize,
+	nt_read_blk,
+	nt_write_blk,
+	nt_flush
 };
+
+
 
 //
 // function to get API
@@ -378,7 +380,7 @@ _MapNtStatus(
 
 
 //
-// Helper functions to make things easier
+// Helper functions to make things easyer
 //
 
 static
@@ -398,7 +400,7 @@ _OpenNtName(
 	IO_STATUS_BLOCK IoStatusBlock;
 
 	//
-	// Make Unicode name from input string
+	// Make Unicode name from inlut string
 	//
 
 	UnicodeString.Buffer = &Buffer[0];
@@ -411,7 +413,7 @@ _OpenNtName(
 
 	if(!NT_SUCCESS(Status))
 	{
-		return Status; // Unmappable character?
+		return Status; // Unpappable character?
 	}
 
 	//
@@ -673,7 +675,7 @@ _NormalizeDeviceName(
 	else if('f' == *Device)
 	{
 		//
-		// 3-d letter should be a digit.
+		// 3-d letted should be a digit.
 		//
 
 		if((*(Device + 3) != '\0') ||

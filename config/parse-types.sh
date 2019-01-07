@@ -118,10 +118,8 @@ if ./asm_types
 then
     true
 else
-    if [ "${CROSS_COMPILE}" != "1" ]; then
-	echo "Problem detected with asm_types.h"
-	echo "" > asm_types.h
-    fi
+    echo "Problem detected with asm_types.h"
+    echo "" > asm_types.h
 fi
 rm asm_types.c asm_types
 

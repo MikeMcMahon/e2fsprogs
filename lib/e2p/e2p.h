@@ -32,13 +32,11 @@ int fgetflags (const char * name, unsigned long * flags);
 int fgetversion (const char * name, unsigned long * version);
 int fsetflags (const char * name, unsigned long flags);
 int fsetversion (const char * name, unsigned long version);
-int fgetproject(const char *name, unsigned long *project);
-int fsetproject(const char *name, unsigned long project);
 int getflags (int fd, unsigned long * flags);
 int getversion (int fd, unsigned long * version);
 int iterate_on_dir (const char * dir_name,
 		    int (*func) (const char *, struct dirent *, void *),
-		    void * private_arg);
+		    void * private);
 void list_super(struct ext2_super_block * s);
 void list_super2(struct ext2_super_block * s, FILE *f);
 void print_fs_errors (FILE * f, unsigned short errors);
@@ -46,9 +44,6 @@ void print_flags (FILE * f, unsigned long flags, unsigned options);
 void print_fs_state (FILE * f, unsigned short state);
 int setflags (int fd, unsigned long flags);
 int setversion (int fd, unsigned long version);
-
-void e2p_list_journal_super(FILE *f, char *journal_sb_buf,
-			    int exp_block_size, int flags);
 
 const char *e2p_feature2string(int compat, unsigned int mask);
 const char *e2p_jrnl_feature2string(int compat, unsigned int mask);
@@ -77,10 +72,3 @@ char *e2p_os2string(int os_type);
 int e2p_string2os(char *str);
 
 unsigned int e2p_percent(int percent, unsigned int base);
-
-const char *e2p_encmode2string(int num);
-int e2p_string2encmode(char *string);
-
-int e2p_str2encoding(const char *string);
-int e2p_get_encoding_flags(int encoding);
-int e2p_str2encoding_flags(int encoding, char *param, __u16 *flags);

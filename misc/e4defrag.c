@@ -34,14 +34,14 @@
 #include <unistd.h>
 #include <ext2fs/ext2_types.h>
 #include <ext2fs/ext2fs.h>
+#include <linux/fs.h>
 #include <sys/ioctl.h>
 #include <ext2fs/fiemap.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
+#include <sys/syscall.h>
 #include <sys/vfs.h>
-
-#include "../version.h"
 
 /* A relatively new ioctl interface ... */
 #ifndef EXT4_IOC_MOVE_EXT
@@ -169,13 +169,13 @@ static int	block_size;
 static int	extents_before_defrag;
 static int	extents_after_defrag;
 static int	mode_flag;
-static uid_t	current_uid;
-static unsigned long long	defraged_file_count;
-static unsigned long long	frag_files_before_defrag;
-static unsigned long long	frag_files_after_defrag;
-static unsigned long long	regular_count;
-static unsigned long long	succeed_cnt;
-static unsigned long long	total_count;
+static unsigned int	current_uid;
+static unsigned int	defraged_file_count;
+static unsigned int	frag_files_before_defrag;
+static unsigned int	frag_files_after_defrag;
+static unsigned int	regular_count;
+static unsigned int	succeed_cnt;
+static unsigned int	total_count;
 static __u8 log_groups_per_flex;
 static __u32 blocks_per_group;
 static __u32 feature_incompat;
@@ -183,21 +183,76 @@ static ext4_fsblk_t	files_block_count;
 static struct frag_statistic_ino	frag_rank[SHOW_FRAG_FILES];
 
 
-/*
- * We prefer posix_fadvise64 when available, as it allows 64bit offset on
- * 32bit systems
- */
-#if defined(HAVE_POSIX_FADVISE64)
-#define posix_fadvise	posix_fadvise64
-#elif defined(HAVE_FADVISE64)
-#define posix_fadvise	fadvise64
-#elif !defined(HAVE_POSIX_FADVISE)
-#error posix_fadvise not available!
+/* Local definitions of some syscalls glibc may not yet have */
+
+#ifndef HAVE_POSIX_FADVISE
+#warning Using locally defined posix_fadvise interface.
+
+#ifndef __NR_fadvise64_64
+#error Your kernel headers dont define __NR_fadvise64_64
 #endif
 
+/*
+ * fadvise() -		Give advice about file access.
+ *
+ * @fd:			defrag target file's descriptor.
+ * @offset:		file offset.
+ * @len:		area length.
+ * @advise:		process flag.
+ */
+static int posix_fadvise(int fd, loff_t offset, size_t len, int advise)
+{
+	return syscall(__NR_fadvise64_64, fd, offset, len, advise);
+}
+#endif /* ! HAVE_FADVISE64_64 */
+
+#ifndef HAVE_SYNC_FILE_RANGE
+#warning Using locally defined sync_file_range interface.
+
+#ifndef __NR_sync_file_range
+#ifndef __NR_sync_file_range2 /* ppc */
+#error Your kernel headers dont define __NR_sync_file_range
+#endif
+#endif
+
+/*
+ * sync_file_range() -	Sync file region.
+ *
+ * @fd:			defrag target file's descriptor.
+ * @offset:		file offset.
+ * @length:		area length.
+ * @flag:		process flag.
+ */
+int sync_file_range(int fd, loff_t offset, loff_t length, unsigned int flag)
+{
+#ifdef __NR_sync_file_range
+	return syscall(__NR_sync_file_range, fd, offset, length, flag);
+#else
+	return syscall(__NR_sync_file_range2, fd, flag, offset, length);
+#endif
+}
+#endif /* ! HAVE_SYNC_FILE_RANGE */
+
 #ifndef HAVE_FALLOCATE64
-#error fallocate64 not available!
-#endif /* ! HAVE_FALLOCATE64 */
+#warning Using locally defined fallocate syscall interface.
+
+#ifndef __NR_fallocate
+#error Your kernel headers dont define __NR_fallocate
+#endif
+
+/*
+ * fallocate64() -	Manipulate file space.
+ *
+ * @fd:			defrag target file's descriptor.
+ * @mode:		process flag.
+ * @offset:		file offset.
+ * @len:		file size.
+ */
+static int fallocate64(int fd, int mode, loff_t offset, loff_t len)
+{
+	return syscall(__NR_fallocate, fd, mode, offset, len);
+}
+#endif /* ! HAVE_FALLOCATE */
 
 /*
  * get_mount_point() -	Get device's mount point.
@@ -385,10 +440,8 @@ static int page_in_core(int fd, struct move_extent defrag_data,
 	*page_num = 0;
 	*page_num = (length + pagesize - 1) / pagesize;
 	*vec = (unsigned char *)calloc(*page_num, 1);
-	if (*vec == NULL) {
-		munmap(page, length);
+	if (*vec == NULL)
 		return -1;
-	}
 
 	/* Get information on whether pages are in core */
 	if (mincore(page, (size_t)length, *vec) == -1 ||
@@ -426,12 +479,10 @@ static int defrag_fadvise(int fd, struct move_extent defrag_data,
 	offset = (loff_t)defrag_data.orig_start * block_size;
 	offset = (offset / pagesize) * pagesize;
 
-#ifdef HAVE_SYNC_FILE_RANGE
 	/* Sync file for fadvise process */
 	if (sync_file_range(fd, offset,
 		(loff_t)pagesize * page_num, sync_flag) < 0)
 		return -1;
-#endif
 
 	/* Try to release buffer cache which this process used,
 	 * then other process can use the released buffer
@@ -890,9 +941,7 @@ static int get_physical_count(struct fiemap_extent_list *physical_list_head)
 
 	do {
 		if ((ext_list_tmp->data.physical + ext_list_tmp->data.len)
-				!= ext_list_tmp->next->data.physical ||
-		    (ext_list_tmp->data.logical + ext_list_tmp->data.len)
-				!= ext_list_tmp->next->data.logical) {
+				!= ext_list_tmp->next->data.physical) {
 			/* This extent and next extent are not continuous. */
 			ret++;
 		}
@@ -1016,9 +1065,7 @@ static int get_best_count(ext4_fsblk_t block_count)
 	int ret;
 	unsigned int flex_bg_num;
 
-	if (blocks_per_group == 0)
-		return 1;
-
+	/* Calcuate best extents count */
 	if (feature_incompat & EXT4_FEATURE_INCOMPAT_FLEX_BG) {
 		flex_bg_num = 1 << log_groups_per_flex;
 		ret = ((block_count - 1) /
@@ -1510,7 +1557,10 @@ static int file_defrag(const char *file, const struct stat64 *buf,
 		goto out;
 	}
 
-	best = get_best_count(blk_count);
+	if (current_uid == ROOT_UID)
+		best = get_best_count(blk_count);
+	else
+		best = 1;
 
 	if (file_frags_start <= best)
 		goto check_improvement;
@@ -1579,7 +1629,7 @@ static int file_defrag(const char *file, const struct stat64 *buf,
 		goto out;
 	}
 
-	/* Calculate donor inode's continuous physical region */
+	/* Calcuate donor inode's continuous physical region */
 	donor_physical_cnt = get_physical_count(donor_list_physical);
 
 	/* Change donor extent list from physical to logical */
@@ -1674,14 +1724,11 @@ int main(int argc, char *argv[])
 	int	i, j, ret = 0;
 	int	flags = FTW_PHYS | FTW_MOUNT;
 	int	arg_type = -1;
-	int	mount_dir_len = 0;
 	int	success_flag = 0;
 	char	dir_name[PATH_MAX + 1];
 	char	dev_name[PATH_MAX + 1];
 	struct stat64	buf;
 	ext2_filsys fs = NULL;
-
-	printf("e4defrag %s (%s)\n", E2FSPROGS_VERSION, E2FSPROGS_DATE);
 
 	/* Parse arguments */
 	if (argc == 1)
@@ -1800,23 +1847,25 @@ int main(int argc, char *argv[])
 
 		if (current_uid == ROOT_UID) {
 			/* Get super block info */
-			ret = ext2fs_open(dev_name, EXT2_FLAG_64BITS, 0,
-					  block_size, unix_io_manager, &fs);
+			ret = ext2fs_open(dev_name, 0, 0, block_size,
+					unix_io_manager, &fs);
 			if (ret) {
-				if (mode_flag & DETAIL)
-					fprintf(stderr,
-						"Warning: couldn't get file "
-						"system details for %s: %s\n",
-						dev_name, error_message(ret));
-			} else {
-				blocks_per_group = fs->super->s_blocks_per_group;
-				feature_incompat = fs->super->s_feature_incompat;
-				log_groups_per_flex = fs->super->s_log_groups_per_flex;
-				ext2fs_close_free(&fs);
+				if (mode_flag & DETAIL) {
+					perror("Can't get super block info");
+					PRINT_FILE_NAME(argv[i]);
+				}
+				continue;
 			}
+
+			blocks_per_group = fs->super->s_blocks_per_group;
+			feature_incompat = fs->super->s_feature_incompat;
+			log_groups_per_flex = fs->super->s_log_groups_per_flex;
+
+			ext2fs_close(fs);
 		}
 
 		switch (arg_type) {
+			int mount_dir_len = 0;
 
 		case DIRNAME:
 			if (!(mode_flag & STATISTIC))
@@ -1828,11 +1877,11 @@ int main(int argc, char *argv[])
 			strncat(lost_found_dir, "/lost+found",
 				PATH_MAX - strnlen(lost_found_dir, PATH_MAX));
 
-			/* Not the case("e4defrag  mount_point_dir") */
+			/* Not the case("e4defrag  mount_piont_dir") */
 			if (dir_name[mount_dir_len] != '\0') {
 				/*
-				 * "e4defrag mount_point_dir/lost+found"
-				 * or "e4defrag mount_point_dir/lost+found/"
+				 * "e4defrag mount_piont_dir/lost+found"
+				 * or "e4defrag mount_piont_dir/lost+found/"
 				 */
 				if (strncmp(lost_found_dir, dir_name,
 					    strnlen(lost_found_dir,
@@ -1846,10 +1895,9 @@ int main(int argc, char *argv[])
 					continue;
 				}
 
-				/* "e4defrag mount_point_dir/else_dir" */
+				/* "e4defrag mount_piont_dir/else_dir" */
 				memset(lost_found_dir, 0, PATH_MAX + 1);
 			}
-			/* fall through */
 		case DEVNAME:
 			if (arg_type == DEVNAME) {
 				strncpy(lost_found_dir, dir_name,
@@ -1912,9 +1960,9 @@ int main(int argc, char *argv[])
 			}
 			/* File tree walk */
 			nftw64(dir_name, file_defrag, FTW_OPEN_FD, flags);
-			printf("\n\tSuccess:\t\t\t[ %llu/%llu ]\n",
-			       succeed_cnt, total_count);
-			printf("\tFailure:\t\t\t[ %llu/%llu ]\n",
+			printf("\n\tSuccess:\t\t\t[ %u/%u ]\n", succeed_cnt,
+				total_count);
+			printf("\tFailure:\t\t\t[ %u/%u ]\n",
 				total_count - succeed_cnt, total_count);
 			if (mode_flag & DETAIL) {
 				printf("\tTotal extents:\t\t\t%4d->%d\n",
@@ -1923,10 +1971,12 @@ int main(int argc, char *argv[])
 				printf("\tFragmented percentage:\t\t"
 					"%3llu%%->%llu%%\n",
 					!regular_count ? 0 :
-					(frag_files_before_defrag * 100) /
+					((unsigned long long)
+					frag_files_before_defrag * 100) /
 					regular_count,
 					!regular_count ? 0 :
-					(frag_files_after_defrag * 100) /
+					((unsigned long long)
+					frag_files_after_defrag * 100) /
 					regular_count);
 			}
 			break;

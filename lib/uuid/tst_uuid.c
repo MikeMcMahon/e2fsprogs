@@ -154,10 +154,7 @@ main(int argc ATTR((unused)) , char **argv ATTR((unused)))
 		printf("UUID time comparison succeeded.\n");
 	}
 
-	if (uuid_parse(str, tst) < 0) {
-		printf("UUID parse failed\n");
-		failed++;
-	}
+	uuid_parse(str, tst);
 	if (!uuid_compare(buf, tst)) {
 		printf("UUID parse and compare succeeded.\n");
 	} else {

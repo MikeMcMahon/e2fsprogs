@@ -37,10 +37,6 @@
 #include <errno.h>
 #endif
 
-#ifdef HAVE_SYS_SYSCTL_H
-#include <sys/sysctl.h>
-#endif
-
 #include "e2fsck.h"
 
 extern e2fsck_t e2fsck_global_ctx;   /* Try your very best not to use this! */
@@ -83,8 +79,6 @@ out:
 	ctx->flags |= E2F_FLAG_ABORT;
 	if (ctx->flags & E2F_FLAG_SETJMP_OK)
 		longjmp(ctx->abort_loc, 1);
-	if (ctx->logf)
-		fprintf(ctx->logf, "Exit status: %d\n", exit_value);
 	exit(exit_value);
 }
 
@@ -195,19 +189,11 @@ int ask_yn(e2fsck_t ctx, const char * string, int def)
 	const char	*defstr;
 	const char	*short_yes = _("yY");
 	const char	*short_no = _("nN");
-	const char	*short_yesall = _("aA");
-	const char	*english_yes = "yY";
-	const char	*english_no = "nN";
-	const char	*english_yesall = "aA";
-	const char	*yesall_prompt = _(" ('a' enables 'yes' to all) ");
-	const char	*extra_prompt = "";
-	static int	yes_answers;
 
 #ifdef HAVE_TERMIOS_H
 	struct termios	termios, tmp;
 
-	if (tcgetattr (0, &termios) < 0)
-		memset(&termios, 0, sizeof(termios));
+	tcgetattr (0, &termios);
 	tmp = termios;
 	tmp.c_lflag &= ~(ICANON | ECHO);
 	tmp.c_cc[VMIN] = 1;
@@ -221,16 +207,7 @@ int ask_yn(e2fsck_t ctx, const char * string, int def)
 		defstr = _(_("<n>"));
 	else
 		defstr = _(" (y/n)");
-	/*
-	 * If the user presses 'y' more than 8 (but less than 12) times in
-	 * succession without pressing anything else, display a hint about
-	 * yes-to-all mode.
-	 */
-	if (yes_answers > 12)
-		yes_answers = -1;
-	else if (yes_answers > 8)
-		extra_prompt = yesall_prompt;
-	log_out(ctx, "%s%s%s? ", string, extra_prompt, defstr);
+	log_out(ctx, "%s%s? ", string, defstr);
 	while (1) {
 		fflush (stdout);
 		if ((c = read_a_char()) == EOF)
@@ -244,40 +221,20 @@ int ask_yn(e2fsck_t ctx, const char * string, int def)
 				longjmp(e2fsck_global_ctx->abort_loc, 1);
 			}
 			log_out(ctx, "%s", _("cancelled!\n"));
-			yes_answers = 0;
 			return 0;
 		}
 		if (strchr(short_yes, (char) c)) {
-		do_yes:
 			def = 1;
-			if (yes_answers >= 0)
-				yes_answers++;
-			break;
-		} else if (strchr(short_no, (char) c)) {
-		do_no:
-			def = 0;
-			yes_answers = -1;
-			break;
-		} else if (strchr(short_yesall, (char)c)) {
-		do_all:
-			def = 2;
-			yes_answers = -1;
-			ctx->options |= E2F_OPT_YES;
-			break;
-		} else if (strchr(english_yes, (char) c)) {
-			goto do_yes;
-		} else if (strchr(english_no, (char) c)) {
-			goto do_no;
-		} else if (strchr(english_yesall, (char) c)) {
-			goto do_all;
-		} else if ((c == 27 || c == ' ' || c == '\n') && (def != -1)) {
-			yes_answers = -1;
 			break;
 		}
+		else if (strchr(short_no, (char) c)) {
+			def = 0;
+			break;
+		}
+		else if ((c == 27 || c == ' ' || c == '\n') && (def != -1))
+			break;
 	}
-	if (def == 2)
-		log_out(ctx, "%s", _("yes to all\n"));
-	else if (def)
+	if (def)
 		log_out(ctx, "%s", _("yes\n"));
 	else
 		log_out(ctx, "%s", _("no\n"));
@@ -310,7 +267,6 @@ void e2fsck_read_bitmaps(e2fsck_t ctx)
 	errcode_t	retval;
 	const char	*old_op;
 	unsigned int	save_type;
-	int		flags;
 
 	if (ctx->invalid_bitmaps) {
 		com_err(ctx->program_name, 0,
@@ -322,11 +278,7 @@ void e2fsck_read_bitmaps(e2fsck_t ctx)
 	old_op = ehandler_operation(_("reading inode and block bitmaps"));
 	e2fsck_set_bitmap_type(fs, EXT2FS_BMAP64_RBTREE, "fs_bitmaps",
 			       &save_type);
-	flags = ctx->fs->flags;
-	ctx->fs->flags |= EXT2_FLAG_IGNORE_CSUM_ERRORS;
 	retval = ext2fs_read_bitmaps(fs);
-	ctx->fs->flags = (flags & EXT2_FLAG_IGNORE_CSUM_ERRORS) |
-			 (ctx->fs->flags & ~EXT2_FLAG_IGNORE_CSUM_ERRORS);
 	fs->default_bitmap_type = save_type;
 	ehandler_operation(old_op);
 	if (retval) {
@@ -367,7 +319,7 @@ void preenhalt(e2fsck_t ctx)
 	if (fs != NULL) {
 		fs->super->s_state |= EXT2_ERROR_FS;
 		ext2fs_mark_super_dirty(fs);
-		ext2fs_close_free(&fs);
+		ext2fs_close(fs);
 	}
 	exit(FSCK_UNCORRECTED);
 }
@@ -651,6 +603,59 @@ int ext2_file_type(unsigned int mode)
 	return 0;
 }
 
+#define STRIDE_LENGTH 8
+/*
+ * Helper function which zeros out _num_ blocks starting at _blk_.  In
+ * case of an error, the details of the error is returned via _ret_blk_
+ * and _ret_count_ if they are non-NULL pointers.  Returns 0 on
+ * success, and an error code on an error.
+ *
+ * As a special case, if the first argument is NULL, then it will
+ * attempt to free the static zeroizing buffer.  (This is to keep
+ * programs that check for memory leaks happy.)
+ */
+errcode_t e2fsck_zero_blocks(ext2_filsys fs, blk_t blk, int num,
+			     blk_t *ret_blk, int *ret_count)
+{
+	int		j, count;
+	static char	*buf;
+	errcode_t	retval;
+
+	/* If fs is null, clean up the static buffer and return */
+	if (!fs) {
+		if (buf) {
+			free(buf);
+			buf = 0;
+		}
+		return 0;
+	}
+	/* Allocate the zeroizing buffer if necessary */
+	if (!buf) {
+		buf = malloc(fs->blocksize * STRIDE_LENGTH);
+		if (!buf) {
+			com_err("malloc", ENOMEM, "%s",
+				_("while allocating zeroizing buffer"));
+			exit(1);
+		}
+		memset(buf, 0, fs->blocksize * STRIDE_LENGTH);
+	}
+	/* OK, do the write loop */
+	for (j = 0; j < num; j += STRIDE_LENGTH, blk += STRIDE_LENGTH) {
+		count = num - j;
+		if (count > STRIDE_LENGTH)
+			count = STRIDE_LENGTH;
+		retval = io_channel_write_blk64(fs->io, blk, count, buf);
+		if (retval) {
+			if (ret_count)
+				*ret_count = count;
+			if (ret_blk)
+				*ret_blk = blk;
+			return retval;
+		}
+	}
+	return 0;
+}
+
 /*
  * Check to see if a filesystem is in /proc/filesystems.
  * Returns 1 if found, 0 if not
@@ -736,7 +741,7 @@ int check_for_modules(const char *fs_name)
 
 /*
  * Helper function that does the right thing if write returns a
- * partial write, or an EAGAIN/EINTR error.
+ * partial write, or an EGAIN/EINTR error.
  */
 int write_all(int fd, char *buf, size_t count)
 {
@@ -757,28 +762,16 @@ int write_all(int fd, char *buf, size_t count)
 	return c;
 }
 
-void dump_mmp_msg(struct mmp_struct *mmp, const char *fmt, ...)
+void dump_mmp_msg(struct mmp_struct *mmp, const char *msg)
 {
-	va_list pvar;
 
-	if (fmt) {
-		printf("MMP check failed: ");
-		va_start(pvar, fmt);
-		vprintf(fmt, pvar);
-		va_end(pvar);
-	}
+	if (msg)
+		printf("MMP check failed: %s\n", msg);
 	if (mmp) {
 		time_t t = mmp->mmp_time;
 
-		printf("MMP_block:\n");
-		printf("    mmp_magic: 0x%x\n", mmp->mmp_magic);
-		printf("    mmp_check_interval: %d\n",
-		       mmp->mmp_check_interval);
-		printf("    mmp_sequence: %08x\n", mmp->mmp_seq);
-		printf("    mmp_update_date: %s", ctime(&t));
-		printf("    mmp_update_time: %lld\n", mmp->mmp_time);
-		printf("    mmp_node_name: %s\n", mmp->mmp_nodename);
-		printf("    mmp_device_name: %s\n", mmp->mmp_bdevname);
+		printf("MMP error info: last update: %s node: %s device: %s\n",
+		       ctime(&t), mmp->mmp_nodename, mmp->mmp_bdevname);
 	}
 }
 
@@ -799,13 +792,13 @@ void e2fsck_set_bitmap_type(ext2_filsys fs, unsigned int default_type,
 			    const char *profile_name, unsigned int *old_type)
 {
 	unsigned type;
-	e2fsck_t ctx = (e2fsck_t) fs->priv_data;
 
 	if (old_type)
 		*old_type = fs->default_bitmap_type;
-	profile_get_uint(ctx->profile, "bitmaps", profile_name, 0,
-			 default_type, &type);
-	profile_get_uint(ctx->profile, "bitmaps", "all", 0, type, &type);
+	profile_get_uint(e2fsck_global_ctx->profile, "bitmaps",
+			 profile_name, 0, default_type, &type);
+	profile_get_uint(e2fsck_global_ctx->profile, "bitmaps",
+			 "all", 0, type, &type);
 	fs->default_bitmap_type = type ? type : default_type;
 }
 
@@ -849,51 +842,4 @@ errcode_t e2fsck_allocate_subcluster_bitmap(ext2_filsys fs, const char *descr,
 	retval = ext2fs_allocate_subcluster_bitmap(fs, descr, ret);
 	fs->default_bitmap_type = save_type;
 	return retval;
-}
-
-/* Return memory size in bytes */
-unsigned long long get_memory_size(void)
-{
-#if defined(_SC_PHYS_PAGES)
-# if defined(_SC_PAGESIZE)
-	return (unsigned long long)sysconf(_SC_PHYS_PAGES) *
-	       (unsigned long long)sysconf(_SC_PAGESIZE);
-# elif defined(_SC_PAGE_SIZE)
-	return (unsigned long long)sysconf(_SC_PHYS_PAGES) *
-	       (unsigned long long)sysconf(_SC_PAGE_SIZE);
-# endif
-#elif defined(CTL_HW)
-# if (defined(HW_MEMSIZE) || defined(HW_PHYSMEM64))
-#  define CTL_HW_INT64
-# elif (defined(HW_PHYSMEM) || defined(HW_REALMEM))
-#  define CTL_HW_UINT
-# endif
-	int mib[2];
-
-	mib[0] = CTL_HW;
-# if defined(HW_MEMSIZE)
-	mib[1] = HW_MEMSIZE;
-# elif defined(HW_PHYSMEM64)
-	mib[1] = HW_PHYSMEM64;
-# elif defined(HW_REALMEM)
-	mib[1] = HW_REALMEM;
-# elif defined(HW_PYSMEM)
-	mib[1] = HW_PHYSMEM;
-# endif
-# if defined(CTL_HW_INT64)
-	unsigned long long size = 0;
-# elif defined(CTL_HW_UINT)
-	unsigned int size = 0;
-# endif
-# if defined(CTL_HW_INT64) || defined(CTL_HW_UINT)
-	size_t len = sizeof(size);
-
-	if (sysctl(mib, 2, &size, &len, NULL, 0) == 0)
-		return (unsigned long long)size;
-# endif
-	return 0;
-#else
-# warning "Don't know how to detect memory on your platform?"
-	return 0;
-#endif
 }

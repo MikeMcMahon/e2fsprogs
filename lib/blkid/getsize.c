@@ -9,13 +9,10 @@
  * %End-Header%
  */
 
-#ifndef _LARGEFILE_SOURCE
 #define _LARGEFILE_SOURCE
-#endif
-#ifndef _LARGEFILE64_SOURCE
 #define _LARGEFILE64_SOURCE
-#endif
 
+/* include this before sys/queues.h! */
 #include "config.h"
 #include "blkidP.h"
 
@@ -37,6 +34,9 @@
 #include <sys/disklabel.h>
 #endif
 #ifdef HAVE_SYS_DISK_H
+#ifdef HAVE_SYS_QUEUE_H
+#include <sys/queue.h> /* for LIST_HEAD */
+#endif
 #include <sys/disk.h>
 #endif
 #ifdef __linux__
@@ -78,15 +78,12 @@ blkid_loff_t blkid_get_dev_size(int fd)
 	unsigned long long size64;
 	blkid_loff_t high, low;
 
-#if defined DKIOCGETBLOCKCOUNT && defined DKIOCGETBLOCKSIZE	/* For Apple Darwin */
-	unsigned int size;
-
-	if (ioctl(fd, DKIOCGETBLOCKCOUNT, &size64) >= 0 &&
-	    ioctl(fd, DKIOCGETBLOCKSIZE, &size) >= 0) {
+#ifdef DKIOCGETBLOCKCOUNT	/* For Apple Darwin */
+	if (ioctl(fd, DKIOCGETBLOCKCOUNT, &size64) >= 0) {
 		if (sizeof(blkid_loff_t) < sizeof(unsigned long long) &&
-		    (size64 * size) > 0xFFFFFFFF)
+		    (size64 << 9) > 0xFFFFFFFF)
 			return 0; /* EFBIG */
-		return (blkid_loff_t)size64 * size;
+		return (blkid_loff_t)size64 << 9;
 	}
 #endif
 
@@ -134,7 +131,7 @@ blkid_loff_t blkid_get_dev_size(int fd)
 			return (blkid_loff_t)this_floppy.size << 9;
 	}
 #endif
-#if defined(HAVE_SYS_DISKLABEL_H) && defined(DIOCGDINFO)
+#ifdef HAVE_SYS_DISKLABEL_H
 	{
 		int part = -1;
 		struct disklabel lab;
@@ -152,7 +149,7 @@ blkid_loff_t blkid_get_dev_size(int fd)
 		 * character) devices, so we need to check for S_ISCHR, too.
 		 */
 		if (fstat(fd, &st) >= 0 &&
-		    blkidP_is_disk_device(st.st_mode))
+		    (S_ISBLK(st.st_mode) || S_ISCHR(st.st_mode)))
 			part = st.st_rdev & 7;
 
 		if (part >= 0 && (ioctl(fd, DIOCGDINFO, (char *)&lab) >= 0)) {
@@ -161,7 +158,7 @@ blkid_loff_t blkid_get_dev_size(int fd)
 				return pp->p_size << 9;
 		}
 	}
-#endif /* defined(HAVE_SYS_DISKLABEL_H) && defined(DIOCGDINFO) */
+#endif /* HAVE_SYS_DISKLABEL_H */
 	{
 #if defined(HAVE_FSTAT64) && !defined(__OSX_AVAILABLE_BUT_DEPRECATED)
 		struct stat64   st;

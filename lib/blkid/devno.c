@@ -31,9 +31,6 @@
 #if HAVE_SYS_MKDEV_H
 #include <sys/mkdev.h>
 #endif
-#ifdef HAVE_SYS_SYSMACROS_H
-#include <sys/sysmacros.h>
-#endif
 
 #include "blkidP.h"
 
@@ -94,7 +91,7 @@ static void free_dirlist(struct dir_list **list)
 	*list = NULL;
 }
 
-void blkid__scan_dir(const char *dirname, dev_t devno, struct dir_list **list,
+void blkid__scan_dir(char *dirname, dev_t devno, struct dir_list **list,
 		     char **devname)
 {
 	DIR	*dir;
@@ -119,7 +116,7 @@ void blkid__scan_dir(const char *dirname, dev_t devno, struct dir_list **list,
 		if (stat(path, &st) < 0)
 			continue;
 
-		if (blkidP_is_disk_device(st.st_mode) && st.st_rdev == devno) {
+		if (S_ISBLK(st.st_mode) && st.st_rdev == devno) {
 			*devname = blkid_strdup(path);
 			DBG(DEBUG_DEVNO,
 			    printf("found 0x%llx at %s (%p)\n", (long long)devno,

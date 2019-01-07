@@ -145,7 +145,8 @@ static void filefrag(ext2_ino_t ino, struct ext2_inode *inode,
 	if (fs->options & VERBOSE_OPT) {
 		blk64_t num_blocks = ext2fs_inode_i_blocks(current_fs, inode);
 
-		if (!ext2fs_has_feature_huge_file(current_fs->super) ||
+		if (!(current_fs->super->s_feature_ro_compat &
+		     EXT4_FEATURE_RO_COMPAT_HUGE_FILE) ||
 		    !(inode->i_flags & EXT4_HUGE_FILE_FL))
 			num_blocks /= current_fs->blocksize / 512;
 
@@ -153,13 +154,11 @@ static void filefrag(ext2_ino_t ino, struct ext2_inode *inode,
 			fs->name, num_blocks, EXT2_I_SIZE(inode));
 	}
 	print_header(fs);
-	if (ext2fs_inode_has_valid_blocks2(current_fs, inode)) {
-		retval = ext2fs_block_iterate3(current_fs, ino,
-					       BLOCK_FLAG_READ_ONLY, NULL,
-					       filefrag_blocks_proc, fs);
-		if (retval)
-			com_err("ext2fs_block_iterate3", retval, 0);
-	}
+	retval = ext2fs_block_iterate3(current_fs, ino,
+				       BLOCK_FLAG_READ_ONLY, NULL,
+				       filefrag_blocks_proc, fs);
+	if (retval)
+		com_err("ext2fs_block_iterate3", retval, 0);
 
 	report_filefrag(fs);
 	fprintf(fs->f, "%s: %d contiguous extents%s\n", fs->name, fs->ext,
@@ -184,7 +183,7 @@ static int filefrag_dir_proc(ext2_ino_t dir EXT2FS_ATTR((unused)),
 	if (entry == DIRENT_DELETED_FILE)
 		return 0;
 
-	thislen = ext2fs_dirent_name_len(dirent);
+	thislen = dirent->name_len & 0xFF;
 	strncpy(name, dirent->name, thislen);
 	name[thislen] = '\0';
 	ino = dirent->inode;
@@ -260,8 +259,7 @@ static void dir_iterate(ext2_ino_t ino, struct filefrag_struct *fs)
 	}
 }
 
-void do_filefrag(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
-		 void *infop EXT2FS_ATTR((unused)))
+void do_filefrag(int argc, char *argv[])
 {
 	struct filefrag_struct fs;
 	struct ext2_inode inode;

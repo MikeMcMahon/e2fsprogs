@@ -29,7 +29,8 @@ gettextsrcdir = $(datadir)/gettext/po
 
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
-mkinstalldirs = @MKDIR_P@
+MKINSTALLDIRS = @MKINSTALLDIRS@
+mkinstalldirs = $(SHELL) $(MKINSTALLDIRS)
 
 GMSGFMT = @GMSGFMT@
 MSGFMT = @MSGFMT@
@@ -269,7 +270,7 @@ uninstall-data-yes:
 	  done; \
 	done
 
-fullcheck check: all
+check: all
 
 info dvi ps pdf html tags TAGS ctags CTAGS ID:
 
@@ -280,9 +281,7 @@ mostlyclean:
 	rm -f $(DOMAIN).po.bak
 	rm -fr *.o
 
-coverage.txt::
-
-clean:: mostlyclean
+clean: mostlyclean
 
 distclean: clean
 	rm -f Makefile Makefile.in POTFILES *.mo

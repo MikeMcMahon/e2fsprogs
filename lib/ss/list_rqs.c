@@ -18,15 +18,20 @@
 
 typedef void sigret_t;
 
+static char const twentyfive_spaces[26] =
+    "                         ";
+static char const NL[2] = "\n";
+
 void ss_list_requests(int argc __SS_ATTR((unused)),
 		      const char * const *argv __SS_ATTR((unused)),
 		      int sci_idx, void *infop __SS_ATTR((unused)))
 {
     ss_request_entry *entry;
     char const * const *name;
-    int i, spacing;
+    int spacing;
     ss_request_table **table;
 
+    char buffer[BUFSIZ];
     FILE *output;
     int fd;
     sigset_t omask, igmask;
@@ -55,24 +60,27 @@ void ss_list_requests(int argc __SS_ATTR((unused)),
         entry = (*table)->requests;
         for (; entry->command_names; entry++) {
             spacing = -2;
+            buffer[0] = '\0';
             if (entry->flags & SS_OPT_DONT_LIST)
                 continue;
             for (name = entry->command_names; *name; name++) {
                 int len = strlen(*name);
-                fputs(*name, output);
+                strncat(buffer, *name, len);
                 spacing += len + 2;
                 if (name[1]) {
-                    fputs(", ", output);
+                    strcat(buffer, ", ");
                 }
             }
             if (spacing > 23) {
-                fputc('\n', output);
+                strcat(buffer, NL);
+                fputs(buffer, output);
                 spacing = 0;
+                buffer[0] = '\0';
             }
-            for (i = 0; i < 25 - spacing; i++)
-                fputc(' ', output);
-            fputs(entry->info_string, output);
-            fputc('\n', output);
+            strncat(buffer, twentyfive_spaces, 25-spacing);
+            strcat(buffer, entry->info_string);
+            strcat(buffer, NL);
+            fputs(buffer, output);
         }
     }
     fclose(output);

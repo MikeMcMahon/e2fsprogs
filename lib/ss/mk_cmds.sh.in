@@ -2,9 +2,11 @@
 #
 #
 
-DIR=@datadir@/ss
+datarootdir=@datarootdir@
+DIR="${DIR-@datadir@/ss}"
+SS_DIR="@SS_DIR@"
 AWK=@AWK@
-SED=sed
+SED=@SED@
 
 for as_var in \
   LANG LANGUAGE LC_ADDRESS LC_ALL LC_COLLATE LC_CTYPE LC_IDENTIFICATION \
@@ -28,8 +30,12 @@ if test -n "$_SS_DIR_OVERRIDE" ; then
 fi
 
 if test ! -f $DIR/ct_c.sed || test ! -f $DIR/ct_c.awk ; then
-    echo "mk_cmds: Couldn't find mk_cmds's template files."
-    exit 1
+    DIR="$SS_DIR"
+#    echo "Falling back to $DIR..."
+    if test ! -f "$DIR/ct_c.sed" || test ! -f "$DIR/ct_c.awk" ; then
+	echo "mk_cmds: Couldn't find mk_cmds's template files."
+	exit 1
+    fi
 fi
 
 FILE="$1"
@@ -51,6 +57,6 @@ if grep "^#__ERROR_IN_FILE" "${TMP}" > /dev/null; then
 else
 	rm -f "${BASE}.c"
 	mv -f "${TMP}" "${BASE}.c"
-	chmod a-w "${BASE}.c"
+	chmod -w "${BASE}.c"
 	exit 0
 fi

@@ -31,20 +31,8 @@ static unsigned int list_backups(ext2_filsys fs, unsigned int *three,
 	int mult = 3;
 	unsigned int ret;
 
-	if (ext2fs_has_feature_sparse_super2(fs->super)) {
-		if (*min == 1) {
-			*min += 1;
-			if (fs->super->s_backup_bgs[0])
-				return fs->super->s_backup_bgs[0];
-		}
-		if (*min == 2) {
-			*min += 1;
-			if (fs->super->s_backup_bgs[1])
-				return fs->super->s_backup_bgs[1];
-		}
-		return fs->group_desc_count;
-	}
-	if (!ext2fs_has_feature_sparse_super(fs->super)) {
+	if (!(fs->super->s_feature_ro_compat &
+	      EXT2_FEATURE_RO_COMPAT_SPARSE_SUPER)) {
 		ret = *min;
 		*min += 1;
 		return ret;
@@ -104,7 +92,7 @@ errcode_t ext2fs_create_resize_inode(ext2_filsys fs)
 	if (fs->blocksize == 1024 && sb_blk == 0)
 		sb_blk = 1;
 
-	/* Maximum possible file size (we only use double indirect blocks) */
+	/* Maximum possible file size (we donly use the dindirect blocks) */
 	apb = EXT2_ADDR_PER_BLOCK(sb);
 	if ((dindir_blk = inode.i_block[EXT2_DIND_BLOCK])) {
 #ifdef RES_GDT_DEBUG
@@ -132,9 +120,12 @@ errcode_t ext2fs_create_resize_inode(ext2_filsys fs)
 		dindir_dirty = inode_dirty = 1;
 		inode_size = apb*apb + apb + EXT2_NDIR_BLOCKS;
 		inode_size *= fs->blocksize;
-		retval = ext2fs_inode_size_set(fs, &inode, inode_size);
-		if (retval)
-			goto out_free;
+		inode.i_size = inode_size & 0xFFFFFFFF;
+		inode.i_size_high = (inode_size >> 32) & 0xFFFFFFFF;
+		if(inode.i_size_high) {
+			sb->s_feature_ro_compat |=
+				EXT2_FEATURE_RO_COMPAT_LARGE_FILE;
+		}
 		inode.i_ctime = fs->now ? fs->now : time(0);
 	}
 

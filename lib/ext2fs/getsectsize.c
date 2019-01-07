@@ -10,12 +10,8 @@
  * %End-Header%
  */
 
-#ifndef _LARGEFILE_SOURCE
 #define _LARGEFILE_SOURCE
-#endif
-#ifndef _LARGEFILE64_SOURCE
 #define _LARGEFILE64_SOURCE
-#endif
 
 #include "config.h"
 #include <stdio.h>
@@ -26,9 +22,6 @@
 #include <errno.h>
 #endif
 #include <fcntl.h>
-#ifdef HAVE_SYS_DISK_H
-#include <sys/disk.h>
-#endif
 #ifdef HAVE_LINUX_FD_H
 #include <sys/ioctl.h>
 #include <linux/fd.h>
@@ -63,12 +56,6 @@ errcode_t ext2fs_get_device_sectsize(const char *file, int *sectsize)
 		return 0;
 	}
 #endif
-#ifdef DIOCGSECTORSIZE
-	if (ioctl(fd, DIOCGSECTORSIZE, sectsize) >= 0) {
-		close(fd);
-		return 0;
-	}
-#endif
 	*sectsize = 0;
 	close(fd);
 	return 0;
@@ -83,11 +70,6 @@ int ext2fs_get_dio_alignment(int fd)
 
 #ifdef BLKSSZGET
 	if (ioctl(fd, BLKSSZGET, &align) < 0)
-		align = 0;
-#endif
-#ifdef DIOCGSECTORSIZE
-	if (align <= 0 &&
-	    ioctl(fd, DIOCGSECTORSIZE, &align) < 0)
 		align = 0;
 #endif
 
@@ -118,14 +100,6 @@ errcode_t ext2fs_get_device_phys_sectsize(const char *file, int *sectsize)
 
 #ifdef BLKPBSZGET
 	if (ioctl(fd, BLKPBSZGET, sectsize) >= 0) {
-		close(fd);
-		return 0;
-	}
-#endif
-#ifdef DIOCGSECTORSIZE
-	/* This isn't really the physical sector size, but FreeBSD
-	 * doesn't seem to have this concept. */
-	if (ioctl(fd, DIOCGSECTORSIZE, sectsize) >= 0) {
 		close(fd);
 		return 0;
 	}

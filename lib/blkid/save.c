@@ -27,10 +27,6 @@
 #endif
 #include "blkidP.h"
 
-#ifdef _WIN32
-#include "windows.h"
-#endif
-
 static int save_dev(blkid_dev dev, FILE *file)
 {
 	struct list_head *p;
@@ -98,19 +94,13 @@ int blkid_flush_cache(blkid_cache cache)
 	if (ret == 0 && S_ISREG(st.st_mode)) {
 		tmp = malloc(strlen(filename) + 8);
 		if (tmp) {
-			mode_t save_umask = umask(022);
 			sprintf(tmp, "%s-XXXXXX", filename);
 			fd = mkstemp(tmp);
-			umask(save_umask);
 			if (fd >= 0) {
 				file = fdopen(fd, "w");
 				opened = tmp;
 			}
-#ifndef _WIN32
 			fchmod(fd, 0644);
-#else
-			chmod(tmp, 0644);
-#endif
 		}
 	}
 
@@ -144,7 +134,7 @@ int blkid_flush_cache(blkid_cache cache)
 	fclose(file);
 	if (opened != filename) {
 		if (ret < 0) {
-			(void) unlink(opened);
+			unlink(opened);
 			DBG(DEBUG_SAVE,
 			    printf("unlinked temp cache %s\n", opened));
 		} else {
@@ -154,11 +144,10 @@ int blkid_flush_cache(blkid_cache cache)
 			if (backup) {
 				sprintf(backup, "%s.old", filename);
 				unlink(backup);
-				(void) link(filename, backup);
+				link(filename, backup);
 				free(backup);
 			}
-			if (rename(opened, filename) < 0)
-				(void) unlink(opened);
+			rename(opened, filename);
 			DBG(DEBUG_SAVE,
 			    printf("moved temp cache %s\n", opened));
 		}

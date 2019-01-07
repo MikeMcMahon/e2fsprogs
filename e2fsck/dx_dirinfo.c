@@ -7,14 +7,14 @@
 
 #include "config.h"
 #include "e2fsck.h"
+#ifdef ENABLE_HTREE
 
 /*
  * This subroutine is called during pass1 to create a directory info
  * entry.  During pass1, the passed-in parent is 0; it will get filled
  * in during pass2.
  */
-void e2fsck_add_dx_dir(e2fsck_t ctx, ext2_ino_t ino, struct ext2_inode *inode,
-		       int num_blocks)
+void e2fsck_add_dx_dir(e2fsck_t ctx, ext2_ino_t ino, int num_blocks)
 {
 	struct dx_dir_info *dir;
 	int		i, j;
@@ -40,10 +40,6 @@ void e2fsck_add_dx_dir(e2fsck_t ctx, ext2_ino_t ino, struct ext2_inode *inode,
 					   sizeof(struct dx_dir_info),
 					   &ctx->dx_dir_info);
 		if (retval) {
-			fprintf(stderr, "Couldn't reallocate dx_dir_info "
-				"structure to %d entries\n",
-				ctx->dx_dir_info_size);
-			fatal_error(ctx, 0);
 			ctx->dx_dir_info_size -= 10;
 			return;
 		}
@@ -73,7 +69,6 @@ void e2fsck_add_dx_dir(e2fsck_t ctx, ext2_ino_t ino, struct ext2_inode *inode,
 	dir->ino = ino;
 	dir->numblocks = num_blocks;
 	dir->hashversion = 0;
-	dir->casefolded_hash = inode->i_flags & EXT4_CASEFOLD_FL;
 	dir->dx_block = e2fsck_allocate_memory(ctx, num_blocks
 				       * sizeof (struct dx_dirblock_info),
 				       "dx_block info array");
@@ -152,3 +147,5 @@ struct dx_dir_info *e2fsck_dx_dir_info_iter(e2fsck_t ctx, int *control)
 
 	return(ctx->dx_dir_info + (*control)++);
 }
+
+#endif /* ENABLE_HTREE */

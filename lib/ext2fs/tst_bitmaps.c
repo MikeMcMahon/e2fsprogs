@@ -187,11 +187,11 @@ static void setup_filesystem(const char *name,
 	return;
 
 errout:
-	ext2fs_close_free(&test_fs);
+	ext2fs_close(test_fs);
+	test_fs = 0;
 }
 
-void setup_cmd(int argc, char **argv, int sci_idx EXT2FS_ATTR((unused)),
-	       void *infop EXT2FS_ATTR((unused)))
+void setup_cmd(int argc, char **argv)
 {
 	int		c, err;
 	unsigned int	blocks = 128;
@@ -199,8 +199,10 @@ void setup_cmd(int argc, char **argv, int sci_idx EXT2FS_ATTR((unused)),
 	unsigned int	type = EXT2FS_BMAP64_BITARRAY;
 	int		flags = EXT2_FLAG_64BITS;
 
-	if (test_fs)
-		ext2fs_close_free(&test_fs);
+	if (test_fs) {
+		ext2fs_close(test_fs);
+		test_fs = 0;
+	}
 
 	reset_getopt();
 	while ((c = getopt(argc, argv, "b:i:lt:")) != EOF) {
@@ -235,13 +237,13 @@ void setup_cmd(int argc, char **argv, int sci_idx EXT2FS_ATTR((unused)),
 	setup_filesystem(argv[0], blocks, inodes, type, flags);
 }
 
-void close_cmd(int argc, char **argv, int sci_idx EXT2FS_ATTR((unused)),
-	       void *infop EXT2FS_ATTR((unused)))
+void close_cmd(int argc, char **argv)
 {
 	if (check_fs_open(argv[0]))
 		return;
 
-	ext2fs_close_free(&test_fs);
+	ext2fs_close(test_fs);
+	test_fs = 0;
 }
 
 
@@ -271,9 +273,7 @@ void dump_bitmap(ext2fs_generic_bitmap bmap, unsigned int start, unsigned num)
 	free(buf);
 }
 
-void dump_inode_bitmap_cmd(int argc, char **argv,
-			   int sci_idx EXT2FS_ATTR((unused)),
-			   void *infop EXT2FS_ATTR((unused)))
+void dump_inode_bitmap_cmd(int argc, char **argv)
 {
 	if (check_fs_open(argv[0]))
 		return;
@@ -282,9 +282,7 @@ void dump_inode_bitmap_cmd(int argc, char **argv,
 	dump_bitmap(test_fs->inode_map, 1, test_fs->super->s_inodes_count);
 }
 	
-void dump_block_bitmap_cmd(int argc, char **argv,
-			   int sci_idx EXT2FS_ATTR((unused)),
-			   void *infop EXT2FS_ATTR((unused)))
+void dump_block_bitmap_cmd(int argc, char **argv)
 {
 	if (check_fs_open(argv[0]))
 		return;
@@ -294,8 +292,7 @@ void dump_block_bitmap_cmd(int argc, char **argv,
 		    test_fs->super->s_blocks_count);
 }
 	
-void do_setb(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
-	     void *infop EXT2FS_ATTR((unused)))
+void do_setb(int argc, char *argv[])
 {
 	unsigned int block, num;
 	int err;
@@ -333,8 +330,7 @@ void do_setb(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
 			test_result, op_result);
 }
 
-void do_clearb(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
-	       void *infop EXT2FS_ATTR((unused)))
+void do_clearb(int argc, char *argv[])
 {
 	unsigned int block, num;
 	int err;
@@ -372,8 +368,7 @@ void do_clearb(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
 			test_result, op_result);
 }
 
-void do_testb(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
-	      void *infop EXT2FS_ATTR((unused)))
+void do_testb(int argc, char *argv[])
 {
 	unsigned int block, num;
 	int err;
@@ -408,8 +403,7 @@ void do_testb(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
 	printf("Block %u is %s\n", block, test_result ? "set" : "clear");
 }
 
-void do_ffzb(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
-	     void *infop EXT2FS_ATTR((unused)))
+void do_ffzb(int argc, char *argv[])
 {
 	unsigned int start, end;
 	int err;
@@ -442,43 +436,8 @@ void do_ffzb(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
 	printf("First unmarked block is %llu\n", out);
 }
 
-void do_ffsb(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
-	     void *infop EXT2FS_ATTR((unused)))
-{
-	unsigned int start, end;
-	int err;
-	errcode_t retval;
-	blk64_t out;
 
-	if (check_fs_open(argv[0]))
-		return;
-
-	if (argc != 3 && argc != 3) {
-		com_err(argv[0], 0, "Usage: ffsb <start> <end>");
-		return;
-	}
-
-	start = parse_ulong(argv[1], argv[0], "start", &err);
-	if (err)
-		return;
-
-	end = parse_ulong(argv[2], argv[0], "end", &err);
-	if (err)
-		return;
-
-	retval = ext2fs_find_first_set_block_bitmap2(test_fs->block_map,
-						      start, end, &out);
-	if (retval) {
-		printf("ext2fs_find_first_set_block_bitmap2() returned %s\n",
-		       error_message(retval));
-		return;
-	}
-	printf("First marked block is %llu\n", out);
-}
-
-
-void do_zerob(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
-	      void *infop EXT2FS_ATTR((unused)))
+void do_zerob(int argc, char *argv[])
 {
 	if (check_fs_open(argv[0]))
 		return;
@@ -487,8 +446,7 @@ void do_zerob(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
 	ext2fs_clear_block_bitmap(test_fs->block_map);
 }
 
-void do_seti(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
-	     void *infop EXT2FS_ATTR((unused)))
+void do_seti(int argc, char *argv[])
 {
 	unsigned int inode;
 	int err;
@@ -517,8 +475,7 @@ void do_seti(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
 	}
 }
 
-void do_cleari(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
-	       void *infop EXT2FS_ATTR((unused)))
+void do_cleari(int argc, char *argv[])
 {
 	unsigned int inode;
 	int err;
@@ -547,8 +504,7 @@ void do_cleari(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
 	}
 }
 
-void do_testi(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
-	      void *infop EXT2FS_ATTR((unused)))
+void do_testi(int argc, char *argv[])
 {
 	unsigned int inode;
 	int err;
@@ -570,8 +526,7 @@ void do_testi(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
 	printf("Inode %u is %s\n", inode, test_result ? "set" : "clear");
 }
 
-void do_ffzi(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
-	     void *infop EXT2FS_ATTR((unused)))
+void do_ffzi(int argc, char *argv[])
 {
 	unsigned int start, end;
 	int err;
@@ -604,42 +559,8 @@ void do_ffzi(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
 	printf("First unmarked inode is %u\n", out);
 }
 
-void do_ffsi(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
-	     void *infop EXT2FS_ATTR((unused)))
-{
-	unsigned int start, end;
-	int err;
-	errcode_t retval;
-	ext2_ino_t out;
 
-	if (check_fs_open(argv[0]))
-		return;
-
-	if (argc != 3 && argc != 3) {
-		com_err(argv[0], 0, "Usage: ffsi <start> <end>");
-		return;
-	}
-
-	start = parse_ulong(argv[1], argv[0], "start", &err);
-	if (err)
-		return;
-
-	end = parse_ulong(argv[2], argv[0], "end", &err);
-	if (err)
-		return;
-
-	retval = ext2fs_find_first_set_inode_bitmap2(test_fs->inode_map,
-						     start, end, &out);
-	if (retval) {
-		printf("ext2fs_find_first_set_inode_bitmap2() returned %s\n",
-		       error_message(retval));
-		return;
-	}
-	printf("First marked inode is %u\n", out);
-}
-
-void do_zeroi(int argc, char *argv[], int sci_idx EXT2FS_ATTR((unused)),
-	      void *infop EXT2FS_ATTR((unused)))
+void do_zeroi(int argc, char *argv[])
 {
 	if (check_fs_open(argv[0]))
 		return;

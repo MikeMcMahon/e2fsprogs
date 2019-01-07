@@ -57,15 +57,16 @@ BSDLIB_INSTALL_DIR = $(root_libdir)
 @MAKEFILE_ELF@
 @MAKEFILE_BSDLIB@
 @MAKEFILE_PROFILE@
+@MAKEFILE_CHECKER@
 
 .c.o:
 	$(E) "	CC $<"
-	$(Q) $(CC) $(ALL_CFLAGS_STLIB) -c $< -o $@
+	$(Q) $(CC) $(ALL_CFLAGS) -c $< -o $@
 	$(Q) $(CHECK_CMD) $(ALL_CFLAGS) $<
-	$(Q) $(CPPCHECK_CMD) $(CPPFLAGS) $<
-@PROFILE_CMT@	$(Q) $(CC) $(ALL_CFLAGS_STLIB) -g -pg -o profiled/$*.o -c $<
-@ELF_CMT@	$(Q) $(CC) $(ALL_CFLAGS_SHLIB) -fPIC -shared -o elfshared/$*.o -c $<
-@BSDLIB_CMT@	$(Q) $(CC) $(ALL_CFLAGS_SHLIB) $(BSDLIB_PIC_FLAG) -o pic/$*.o -c $<
+@PROFILE_CMT@	$(Q) $(CC) $(ALL_CFLAGS) -g -pg -o profiled/$*.o -c $<
+@CHECKER_CMT@	$(Q) $(CC) $(ALL_CFLAGS) -checker -g -o checker/$*.o -c $<
+@ELF_CMT@	$(Q) $(CC) $(ALL_CFLAGS) -fPIC -o elfshared/$*.o -c $<
+@BSDLIB_CMT@	$(Q) $(CC) $(ALL_CFLAGS) $(BSDLIB_PIC_FLAG) -o pic/$*.o -c $<
 
 all:: tst_uuid uuid_time $(SMANPAGES) uuid.pc
 
@@ -130,10 +131,10 @@ uuid.pc: $(srcdir)/uuid.pc.in $(top_builddir)/config.status
 	$(Q) cd $(top_builddir); CONFIG_FILES=lib/uuid/uuid.pc ./config.status
 
 installdirs::
-	$(E) "	MKDIR_P $(libdir) $(includedir)/uuid $(man3dir)"
-	$(Q) $(MKDIR_P) $(DESTDIR)$(libdir)  \
+	$(E) "	MKINSTALLDIRS $(libdir) $(includedir)/uuid $(man3dir)"
+	$(Q) $(MKINSTALLDIRS) $(DESTDIR)$(libdir)  \
 		$(DESTDIR)$(includedir)/uuid $(DESTDIR)$(man3dir) \
-		$(DESTDIR)$(pkgconfigdir)
+		$(DESTDIR)$(libdir)/pkgconfig
 
 install:: all installdirs 
 	$(E) "	INSTALL_DATA $(libdir)/libuuid.a"
@@ -155,23 +156,22 @@ install:: all installdirs
 	$(E) "	LINK $(man3dir)/uuid_generate_time.3"
 	$(Q) (cd $(DESTDIR)$(man3dir); \
 	    $(LN) $(LINK_INSTALL_FLAGS) uuid_generate.3 uuid_generate_time.3)
-	$(E) "	INSTALL_DATA $(pkgconfigdir)/uuid.pc"
-	$(Q) $(INSTALL_DATA) uuid.pc $(DESTDIR)$(pkgconfigdir)/uuid.pc
+	$(E) "	INSTALL_DATA $(libdir)/pkgconfig/uuid.pc"
+	$(Q) $(INSTALL_DATA) uuid.pc $(DESTDIR)$(libdir)/pkgconfig/uuid.pc
 
 uninstall::
 	$(RM) -f $(DESTDIR)$(libdir)/libuuid.a \
-		$(DESTDIR)$(pkgconfigdir)/uuid.pc
+		$(DESTDIR)$(libdir)/pkgconfig/uuid.pc
 	for i in $(SMANPAGES); do \
 		$(RM) -f $(DESTDIR)$(man3dir)/$$i; \
 	done
 	$(RM) -f $(DESTDIR)$(man3dir)/uuid_generate_random.3 $(DESTDIR)$(man3dir)/uuid_generate_time.3
 
 clean::
-	$(RM) -f \#* *.s *.o *.a *~ *.bak core profiled/* uuid.h \
-		../libuuid.a ../libuuid_p.a tst_uuid uuid_time \
-		uuid.pc uuid_types.h $(SMANPAGES)
+	$(RM) -f \#* *.s *.o *.a *~ *.bak core profiled/* checker/* uuid.h
+	$(RM) -f ../libuuid.a ../libuuid_p.a tst_uuid uuid_time $(SMANPAGES)
 
-fullcheck check:: tst_uuid
+check:: tst_uuid
 	LD_LIBRARY_PATH=$(LIB) DYLD_LIBRARY_PATH=$(LIB) ./tst_uuid
 
 mostlyclean:: clean

@@ -9,12 +9,8 @@
  * %End-Header%
  */
 
-#ifndef _LARGEFILE_SOURCE
 #define _LARGEFILE_SOURCE
-#endif
-#ifndef _LARGEFILE64_SOURCE
 #define _LARGEFILE64_SOURCE
-#endif
 
 #include "config.h"
 #if HAVE_SYS_TYPES_H
@@ -41,7 +37,7 @@
 
 #else
 #if defined(HAVE_LLSEEK)
-#include <sys/syscall.h>
+#include <syscall.h>
 
 #ifndef HAVE_LLSEEK_PROTOTYPE
 extern long long llseek (int fd, long long offset, int origin);
@@ -53,7 +49,7 @@ extern long long llseek (int fd, long long offset, int origin);
 
 #if SIZEOF_LONG == SIZEOF_LONG_LONG
 
-#define my_llseek lseek
+#define llseek lseek
 
 #else /* SIZEOF_LONG != SIZEOF_LONG_LONG */
 
@@ -87,7 +83,7 @@ static ext2_loff_t my_llseek (int fd, ext2_loff_t offset, int origin)
 	return (retval == -1 ? (ext2_loff_t) retval : result);
 }
 
-#endif	/* SIZE_LONG == SIZEOF_LONG_LONG */
+#endif	/* __alpha__ || __ia64__ */
 
 #endif /* HAVE_LLSEEK */
 #endif /* defined(HAVE_LSEEK64) && defined(HAVE_LSEEK64_PROTOTYPE) */
@@ -95,7 +91,7 @@ static ext2_loff_t my_llseek (int fd, ext2_loff_t offset, int origin)
 ext2_loff_t ext2fs_llseek (int fd, ext2_loff_t offset, int origin)
 {
 #if SIZEOF_OFF_T >= SIZEOF_LONG_LONG
-	return my_llseek (fd, offset, origin);
+	return lseek (fd, offset, origin);
 #else
 	ext2_loff_t result;
 	static int do_compat = 0;
